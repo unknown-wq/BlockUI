@@ -216,13 +216,24 @@ javac -nowarn -proc:none -Xmaxerrs 3000 --release 25 -cp "$CP" -d /tmp/out-<ро
 
 ## Contract deviations
 
-*(пусто — заполняется оркестратором из финальных отчётов агентов)*
+- **K4 — конфиг частично восстановлен (persistence).** Срез по §10 оставил `ConfigValue#save()` пустым,
+  из-за чего ни одна настройка не переживала перезапуск. Добавлен `common/config/ConfigStore.java`
+  (+ `FlatToml.java`, `ConfigCoercion.java`): файл `config/<modid>-<type>.toml` в том же имени и том же
+  диалекте TOML, что писал NightConfig, поэтому конфиг от NeoForge-сборки читается как есть.
+  Загрузка — до прайминга watcher'ов; запись — дебаунс 1 с + гарантированный flush на
+  `ServerLifecycleEvents.SERVER_STOPPING` / `ClientLifecycleEvents.CLIENT_STOPPING` + shutdown hook.
+  **Ни одна существующая публичная сигнатура не изменена**; добавлен только перегруженный
+  `Configurations(String modId, …)` и `Configurations#saveAll()`.
 
 ---
 
 ## Disabled content
 
-*(пусто — журнал §10, по строке на срез)*
+- **K4, остаток среза.** Синхронизация server-конфига на клиент при логине (`ConfigTracker`) — не сделана.
+- **K4, остаток среза.** Per-world server-конфиг: файл лежит в `config/`, а не в `<world>/serverconfig/`,
+  т.е. один на инсталляцию, а не на мир.
+- **K4, остаток среза.** Генерируемый экран настроек (`IConfigScreenFactory`) и слежение за файлом
+  (hot-reload правок извне) — не сделаны; `ConfigValue#clearCache()` осознанно остаётся no-op.
 
 ---
 
