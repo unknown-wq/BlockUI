@@ -8,6 +8,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.renderer.state.gui.GuiRenderState;
+import net.minecraft.client.renderer.state.gui.pip.PictureInPictureRenderState;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix3x2fStack;
@@ -105,6 +106,18 @@ public class BOGuiGraphics extends GuiGraphicsExtractor
             fakeLevel = new SingleBlockFakeLevel(Minecraft.getInstance().level);
         }
         return fakeLevel;
+    }
+
+    /**
+     * Replaces NeoForge's {@code GuiGraphics#submitPictureInPictureRenderState}. Vanilla 26.2 only
+     * exposes {@link GuiRenderState#addPicturesInPictureState}, so this keeps picture-in-picture
+     * submission behind the facade instead of making every caller reach into the render state.
+     *
+     * @param state the picture-in-picture state to submit
+     */
+    public void submitPictureInPictureRenderState(final PictureInPictureRenderState state)
+    {
+        guiRenderState.addPicturesInPictureState(state);
     }
 
     public static class CountingMatrix3x2fStack extends Matrix3x2fStack

@@ -191,17 +191,6 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
         return renderState.data == lastData;
     }
 
-    /**
-     * TODO(port-26.2): this belongs on {@link BOGuiGraphics} — see the agent D report. NeoForge added
-     * {@code GuiGraphics#submitPictureInPictureRenderState}; vanilla 26.2 only offers
-     * {@code GuiRenderState#addPicturesInPictureState} (GuiRenderState.java:74), reached through the
-     * AccessWidened {@code GuiGraphicsExtractor#guiRenderState}.
-     */
-    private static void submitPip(final BOGuiGraphics target, final PictureInPictureRenderState state)
-    {
-        target.guiRenderState.addPicturesInPictureState(state);
-    }
-
     public record BlockStateRenderState(Matrix3x2f pose,
         int x0,
         int x1,
@@ -267,7 +256,7 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
                             });
                     }
                 }
-                submitPip(target, new BlockStateRenderState(pose,
+                target.submitPictureInPictureRenderState(new BlockStateRenderState(pose,
                     x,
                     x + w,
                     y,

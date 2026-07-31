@@ -1,6 +1,7 @@
 package com.ldtteam.blockui.mod;
 
 import com.ldtteam.blockui.mod.container.ContainerHook;
+import com.ldtteam.common.network.ModNetworking;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.CommonLifecycleEvents;
@@ -28,6 +29,11 @@ public class BlockUI implements ModInitializer
     @Override
     public void onInitialize()
     {
+        // Contract K3. Registers the payload types and the serverbound receivers, and starts
+        // capturing the running server for IClientboundDistributor. Without this the network layer
+        // compiles but silently does nothing.
+        ModNetworking.register();
+
         // was: @SubscribeEvent onTagsUpdated(TagsUpdatedEvent) in ClientEventSubscriber
         CommonLifecycleEvents.TAGS_LOADED.register((registries, client) -> ContainerHook.init());
     }

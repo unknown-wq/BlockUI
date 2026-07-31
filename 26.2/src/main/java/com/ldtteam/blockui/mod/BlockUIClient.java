@@ -5,6 +5,7 @@ import com.ldtteam.blockui.Loader;
 import com.ldtteam.blockui.UiRenderMacros;
 import com.ldtteam.blockui.hooks.HookManager;
 import com.ldtteam.blockui.mod.item.BlockStatePipRenderer;
+import com.ldtteam.common.network.ModNetworking;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -54,6 +55,10 @@ public class BlockUIClient implements ClientModInitializer
     @Override
     public void onInitializeClient()
     {
+        // Contract K3, client half: registers the clientbound receivers. The payload types
+        // themselves are registered by ModNetworking.register() from the common entrypoint.
+        ModNetworking.registerClient();
+
         KeyMappingHelper.registerKeyMapping(OPEN_TEST_GUI);
 
         // was: AddClientReloadListenersEvent
