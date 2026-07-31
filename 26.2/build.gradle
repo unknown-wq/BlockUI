@@ -1,6 +1,5 @@
 plugins {
     id 'net.fabricmc.fabric-loom' version "${loom_version}"
-    id 'java'
 }
 
 version = project.mod_version
@@ -9,12 +8,17 @@ group = project.maven_group
 base { archivesName = project.archives_base_name }
 
 repositories {
-    mavenCentral()
+    mavenCentral()   // JUnit only; Loom contributes the Minecraft/Fabric repositories itself.
+}
+
+loom {
+    // Translated from the NeoForge META-INF/accesstransformer.cfg — see PORT-STATUS.md K8.
+    accessWidenerPath = file('src/main/resources/blockui.accesswidener')
 }
 
 dependencies {
-    // No `mappings` line and no `mod` prefix on configurations: since 26.1 the
-    // game ships unobfuscated, so there is nothing left to remap.
+    // Minecraft 26.1+ is unobfuscated and Yarn is discontinued: there is no `mappings` line,
+    // and Loom no longer exposes the `mod`-prefixed configurations because nothing is remapped.
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
@@ -32,14 +36,21 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
     it.options.encoding = 'UTF-8'
+    it.options.release = 25
+    // A port produces error counts javac truncates by default; keep them all, drop the warnings.
+    it.options.compilerArgs += ['-Xmaxerrs', '5000', '-Xmaxwarns', '0']
 }
 
 java {
     sourceCompatibility = JavaVersion.VERSION_25
     targetCompatibility = JavaVersion.VERSION_25
-    withSourcesJar()
 }
 
 tasks.named('test') { useJUnitPlatform() }
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}

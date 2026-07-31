@@ -13,9 +13,9 @@
 | Gradle | `/opt/gradle-9.6.1/bin/gradle` — **никогда не `./gradlew`** (403 на ассеты GitHub) |
 | Проект | `/home/user/BlockUI/26.2` |
 | Исходник (только чтение) | `/home/user/BlockUI/26.1.2` — **не редактировать** (§9 DON'T 7) |
-| Декомпилированная ваниль | `/opt/mc-src` — **см. флаг ниже** |
-| `/opt/mc-src` готов | **ДА** |
-| Референс-моды на диске | **нет ни одного** — см. «Отсутствующие референсы» |
+| Декомпилированная ваниль | `/opt/mc-src` — **7055 файлов, готово** |
+| `/opt/mc-src` готов | **ДА** — не перегенерировать, только `grep -rn` |
+| Референс-моды на диске | **четыре, см. таблицу ниже** |
 
 Любая сборка:
 ```sh
@@ -24,18 +24,43 @@ cd /home/user/BlockUI/26.2 && JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64 \
 ```
 **Одна инвокация Gradle одновременно.** Две параллельные — порча кэша Loom.
 
-### Отсутствующие референсы — важное отличие этого порта
+### Референс-моды на диске — все четыре из бандла
 
-Бандл везде говорит «скопируй форму из портированного 26.2-мода на диске»
-(`Fabric-LuckyTNTMod`, `simple-planes`, `desolation`, `Domum-Ornamentum`).
-**В этом контейнере их нет** — склонирован только BlockUI. Поэтому приоритет источников истины
-для агентов сдвигается:
+Это **портированные и доведённые до зелёного сервера** 26.2-моды. Бандл в каждом рецепте говорит
+«скопируй форму из портированного мода» — вот они. `26.2/` внутри каждого репозитория — это уже порт,
+соседние `1.21.1/` и `26.1/` — исходники до порта, полезны как «было → стало».
 
-1. `/opt/mc-src` — декомпилированная ваниль 26.2, `grep -rn`;
-2. `javap` по джарникам fabric-api в `~/.gradle/caches/modules-2/files-2.1/net.fabricmc.fabric-api/`
-   — **основной способ** узнать форму Fabric API, раз референс-мода нет;
-3. `PORTING-BUNDLE-26.2.md` в корне репозитория — цитаты из него в отчётах помечать как «из бандла»,
-   потому что он ниже по авторитету, чем первые два.
+| Мод | Путь | Природа | Кому полезен |
+|---|---|---|---|
+| **Domum Ornamentum** | `/workspace/domum-ornamentum/26.2` | **NeoForge 26.1 → Fabric 26.2, тот же LDT Team** — ближайший аналог этой задачи | **всем**; A: `build.gradle`, `fabric.mod.json`, entrypoints; есть `PORT-STATUS.md` и `PORT-GAPS.md` завершённого порта |
+| **simple-planes** | `/workspace/simple-planes/26.2` | NeoForge 1.21.1 → Fabric 26.2 | **A: `simpleplanes.accesswidener` — прямой перевод AT→AW с комментарием**; C/D: 4 экрана на `GuiGraphicsExtractor` |
+| **desolation** | `/workspace/desolation` | Fabric 1.21.6 → 26.1.2 → 26.2 | A: `desolation.accesswidener` (крупный, с секциями); `client/hud/DesolationHudElements.java` — **живой `HudElementRegistry`** |
+| **Fabric-LuckyTNTMod** | `/workspace/fabric-luckytntmod` | Yarn 1.21 → 26.2, две части (`TntLib` + `tntmod`) | `tntmod/.../client/overlay/OverlayTick.java` — `GuiGraphicsExtractor` в оверлее; скрипты `port-*.sh/py` |
+
+**Приоритет источников истины для агента** (§9 DO 1–2):
+
+1. **референс-мод** — там та же задача уже решена, копировать форму, а не сочинять;
+2. `/opt/mc-src` — декомпилированная ваниль 26.2, `grep -rn`; **выше бандла по авторитету**;
+3. `javap` по джарникам fabric-api в `/root/.gradle/caches/modules-2/files-2.1/net.fabricmc.fabric-api/`
+   — единственный способ узнать форму Fabric API, которой нет ни в ваниле, ни в референсе;
+4. `/home/user/BlockUI/PORTING-BUNDLE-26.2.md` — цитаты из него в отчёте помечать «из бандла»:
+   он ниже по авторитету, чем первые три, и содержит известные ошибки.
+
+**Референс-моды — только для чтения.** Не редактировать, не собирать, Gradle в них не запускать.
+
+### Уже подтверждено оркестратором на этом окружении
+
+Чтобы агенты не тратили на это попытки:
+
+- `ResourceLocation.java` в `/opt/mc-src/net/minecraft/resources/` **отсутствует**, есть `Identifier.java`.
+- `GuiGraphics.java` в `/opt/mc-src/net/minecraft/client/gui/` **отсутствует**, есть `GuiGraphicsExtractor.java`.
+- **Конфигураций `modImplementation`/`modApi` у Loom 1.17.13 нет** — ремапить нечего, только
+  `implementation`. Это уже стоило одного прогона Gradle.
+- Форма `build.gradle`/`gradle.properties`/`settings.gradle` выровнена по
+  `/workspace/domum-ornamentum/26.2` и собирается: `genSources` зелёный.
+- AccessWidener подключается через `loom { accessWidenerPath = file(...) }` **и** строку
+  `"accessWidener": "blockui.accesswidener"` в `fabric.mod.json`
+  (образец — simple-planes, у которого есть обе).
 
 ---
 
