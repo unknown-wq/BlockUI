@@ -29,12 +29,13 @@ import java.util.stream.Collectors;
  * {@code XXX.get()} call sites are unchanged.
  * <p>
  * Every minted value is registered with the {@link ConfigStore} that {@link Configurations} put in the
- * {@link Builder}, so the tree is loaded from and saved to {@code config/<modid>-<type>.toml}. What is still
- * lost is per-world server configs, client/server synchronisation, range/element validation at
- * <em>definition</em> time and the generated config screen.
+ * {@link Builder}, so the tree is loaded from and saved to {@code config/<modid>-<type>.toml}, and a SERVER
+ * configuration is shipped to joining clients again ({@link ConfigSyncManager}). What is still lost is per-world
+ * server configs, range/element validation at <em>definition</em> time and the generated config screen.
  *
  * @see ConfigValue
  * @see ConfigStore
+ * @see ConfigSyncManager
  */
 public abstract class AbstractConfiguration
 {

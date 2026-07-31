@@ -1,6 +1,7 @@
 package com.ldtteam.common.network;
 
 import com.ldtteam.blockui.mod.BlockUI;
+import com.ldtteam.common.config.ConfigSyncManager;
 import com.ldtteam.common.util.ServerLifecycleHooks;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +41,10 @@ public final class ModNetworking
     public static void register()
     {
         ServerLifecycleHooks.init();
+
+        // K4: the server -> client config sync (NeoForge's ConfigTracker). Registers its own payload type, so it
+        // has to run here rather than from a dependent mod - and before any of them can build a Configurations.
+        ConfigSyncManager.init();
     }
 
     /**

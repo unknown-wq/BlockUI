@@ -1,6 +1,7 @@
 package com.ldtteam.common.config;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 
 /**
  * Client bouncer class: everything in here touches a client-only Fabric API type, so it must never be loaded on
@@ -41,5 +42,27 @@ public class ClientConfigHelper
     static void registerClient(final Runnable flush)
     {
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> flush.run());
+    }
+
+    /**
+     * Hooks the client end of the server -&gt; client config sync: the server's values are dropped again the
+     * moment the connection ends, so the player is back on their own settings.
+     * <p>
+     * {@code DISCONNECT} fires for every way a session can end - a clean quit, a kick, a timeout, a crashed
+     * server - which is exactly why the revert hangs off it rather than off anything the disconnecting code has
+     * to remember to call. {@code JOIN} additionally clears anything a missed disconnect could have left behind;
+     * it runs when the client enters play, i.e. before any sync message for the new server can be handled.
+     * <p>
+     * Both go through {@code Minecraft#execute}: a disconnect can be reported from the netty thread, and the
+     * revert fires config watchers, whose listeners are downstream game code that has every right to expect the
+     * client thread. {@code execute} runs the task inline when it is already on that thread, so the JOIN case
+     * keeps its ordering against the sync message that follows it.
+     *
+     * @param revert {@link ConfigSyncManager#revertAll()}
+     */
+    static void registerSyncLifecycle(final Runnable revert)
+    {
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(revert));
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(revert));
     }
 }

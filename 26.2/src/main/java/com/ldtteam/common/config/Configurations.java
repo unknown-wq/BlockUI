@@ -24,10 +24,12 @@ import java.util.function.Function;
  * <li>{@code ModConfigEvent.Loading} -&gt; {@link ConfigStore#load()} immediately after the configuration object
  * is constructed, and always <em>before</em> the watchers are primed - otherwise the watchers would cache the
  * compiled-in defaults and the first genuine on-disk value would never fire a listener;</li>
- * <li>{@code ModConfigEvent.Reloading} -&gt; nothing. The file is not watched; the only source of a change is an
- * explicit {@link #set(ConfigValue, Object)} from game code, which already goes through the watchers;</li>
- * <li>{@code ConfigTracker} login sync -&gt; still cut. The server config is loaded per <i>installation</i>, not
- * per world, and is not shipped to clients.</li>
+ * <li>{@code ModConfigEvent.Reloading} -&gt; {@link #applyServerSync(String)} / {@link #revertServerSync()}. The
+ * file is not watched, so the only two things that can change a value behind game code's back are an explicit
+ * {@link #set(ConfigValue, Object)} and a server dictating its SERVER config to us; both fire the watchers;</li>
+ * <li>{@code ConfigTracker} login sync -&gt; {@link ConfigSyncManager}, restored. What is still cut is the
+ * <i>per-world</i> server config: the file lives in {@code config/}, so it is one per installation rather than
+ * one per world.</li>
  * </ul>
  * The {@code ModContainer} / {@code IEventBus} constructor parameters remain gone.
  */
@@ -58,6 +60,13 @@ public class Configurations<CLIENT extends AbstractConfiguration,
     private final AbstractConfiguration[] activeConfigs;
 
     private final ConfigStore[] stores;
+
+    /**
+     * The store behind {@link #serverConfig}, i.e. the only one that takes part in the login sync. Null when this
+     * mod has no server configuration.
+     */
+    @Nullable
+    private final ConfigStore serverStore;
 
     /**
      * Builds configuration tree. The file each configuration is persisted to is named after the mod id its
@@ -101,6 +110,7 @@ public class Configurations<CLIENT extends AbstractConfiguration,
 
         activeConfigs = configs.toArray(AbstractConfiguration[]::new);
         stores = builtStores.toArray(ConfigStore[]::new);
+        serverStore = findStore(ConfigStore.Type.SERVER);
 
         // every store has already been loaded by createConfig, so the watchers cache what is actually on disk
         // and the first genuine change still fires a listener
@@ -110,6 +120,23 @@ public class Configurations<CLIENT extends AbstractConfiguration,
         }
 
         registerShutdownFlush();
+
+        // makes this tree visible to the login sync; a plain map put, so the order in which mods build their
+        // configurations does not matter
+        ConfigSyncManager.register(this);
+    }
+
+    @Nullable
+    private ConfigStore findStore(final ConfigStore.Type type)
+    {
+        for (final ConfigStore store : stores)
+        {
+            if (store.getType() == type)
+            {
+                return store;
+            }
+        }
+        return null;
     }
 
     @Nullable
@@ -199,12 +226,143 @@ public class Configurations<CLIENT extends AbstractConfiguration,
     /**
      * Setter wrapper so watchers are fine. This should be called from any code that manually changes ConfigValues using set functions.
      * (Mostly done by settings UIs)
+     * <p>
+     * On a client connected to a remote server this edits, and persists, the <em>local</em> value of a server
+     * config value; {@link ConfigValue#get()} keeps answering with the server's until the connection ends. A
+     * settings UI should therefore skip - or at least mark - a value that reports
+     * {@link ConfigValue#isSynced()}.
      */
     public <T> void set(final ConfigValue<T> configValue, final T value)
     {
         configValue.set(value);
         configValue.save();
         onConfigValueEdit(configValue);
+    }
+
+    // =============== SERVER -> CLIENT SYNC ===============
+
+    /**
+     * @return the mod this tree belongs to, or null when nothing bound one (no configuration at all, or a tree
+     *         built through the public no-arg {@link Builder})
+     */
+    @Nullable
+    String getModId()
+    {
+        for (final ConfigStore store : stores)
+        {
+            if (store.getModId() != null)
+            {
+                return store.getModId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Server side: renders the SERVER configuration for a joining client.
+     *
+     * @return flat TOML document, or null when this mod has no server configuration or it is empty
+     * @see    ConfigSync#encode(java.util.Collection)
+     */
+    @Nullable
+    String snapshotServerConfigForSync()
+    {
+        if (serverStore == null || serverStore.getValues().isEmpty())
+        {
+            return null;
+        }
+        return ConfigSync.encode(serverStore.getValues());
+    }
+
+    /**
+     * Client side: puts the connected server's SERVER config on top of our own and fires the watchers of
+     * everything that actually changed.
+     * <p>
+     * The local values are not touched - the sync is an overlay, see {@link ConfigValue#applySync(Object)} - so
+     * nothing here can reach {@code config/<modid>-server.toml}, and {@link #revertServerSync()} is a complete
+     * undo without a snapshot to keep.
+     *
+     * @param document what the server sent
+     */
+    void applyServerSync(final String document)
+    {
+        if (serverStore == null)
+        {
+            LOGGER.warn("Ignoring a server config sync for '{}': this installation has no server configuration",
+                getModId());
+            return;
+        }
+
+        final ConfigSync.Outcome outcome = ConfigSync.apply(serverStore.getValues(), document);
+        outcome.problems().forEach(problem -> LOGGER.warn("Server config sync for '{}': {}", getModId(), problem));
+
+        LOGGER.info("Applied the server's configuration for '{}': {} value(s) taken from the server, "
+            + "{} kept locally (the server did not send them), {} changed",
+            getModId(),
+            outcome.applied(),
+            outcome.missingRemotely(),
+            outcome.changed().size());
+
+        fireWatchersFor(outcome.changed());
+    }
+
+    /**
+     * Client side: back to this installation's own values, and fire the watchers of everything that thereby
+     * changed. Called on disconnect, however that disconnect came about.
+     */
+    void revertServerSync()
+    {
+        if (serverStore == null)
+        {
+            return;
+        }
+
+        final List<ConfigValue<?>> changed = ConfigSync.revert(serverStore.getValues());
+        if (!changed.isEmpty())
+        {
+            LOGGER.info("Dropped the server's configuration for '{}'; {} value(s) are back on the local setting",
+                getModId(),
+                changed.size());
+        }
+        fireWatchersFor(changed);
+    }
+
+    /**
+     * @return true while a server is dictating any of this mod's server config values
+     */
+    public boolean isSyncedFromServer()
+    {
+        return serverStore != null && ConfigSync.isAnySynced(serverStore.getValues());
+    }
+
+    /**
+     * Fires exactly the watchers that are attached to one of the given values, and only if the value really did
+     * change - {@link ConfigWatcher#compareAndFireChangeEvent()} compares against what it last saw.
+     * <p>
+     * Watchers are looked up across all three configurations rather than only the server one, because
+     * {@code addWatcher} is free to be called on any of them.
+     */
+    private void fireWatchersFor(final List<ConfigValue<?>> changed)
+    {
+        if (changed.isEmpty())
+        {
+            return;
+        }
+
+        for (final AbstractConfiguration cfg : activeConfigs)
+        {
+            for (final ConfigWatcher<?> configWatcher : cfg.watchers)
+            {
+                for (final ConfigValue<?> value : changed)
+                {
+                    if (configWatcher.isSameForgeConfig(value))
+                    {
+                        configWatcher.compareAndFireChangeEvent();
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -223,6 +381,13 @@ public class Configurations<CLIENT extends AbstractConfiguration,
                     configWatcher.compareAndFireChangeEvent();
                 }
             }
+        }
+
+        // a server config edited while a world is running has to reach the clients that were told the old value
+        // at login; on a remote client there is no running server, so this does nothing
+        if (serverStore != null && serverStore.owns(configValue))
+        {
+            ConfigSyncManager.resyncToConnectedPlayers(this);
         }
     }
 }
