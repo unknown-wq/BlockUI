@@ -123,17 +123,18 @@ AtlasRegistry.register(new AtlasConfig(
 «через пайплайн» недоступен — `Tesselator` удалён, у `RenderSystem` нет никакого
 `setShaderColor`. Так что оборачивание остаётся идиоматичным.
 
-**Рекомендация — обойтись без обёртки.** Раз `setDefaultColor()` и так был явным вызовом
-на вершину, замена стоит одной строки на call-site:
+**Обёртка возвращена** (коммит `97ee934`) — ваш аргумент про 32 call-site'а в одном методе
+принят. `26.2/.../blockui/util/color/ColouredVertexConsumer.java`, семантика дословно та же.
+Адаптация к 26.2: убран `misc(...)` (метода больше нет в интерфейсе), добавлен
+`setLineWidth(float)` (новый abstract), `setColor(int)` переопределён явно (был default).
 
-```java
-final IColour borderColour = own ? new ColourQuartet4i(255, 255, 255, 255)
-                                 : new ColourQuartet4i(255,  70,  70, 255);
-borderColour.writeIntoBuffer(bufferbuilder.addVertex(x, y, z));   // было: buf.addVertex(...).setDefaultColor();
-```
-
-`ColourQuartet4i` — тот же record с четырьмя int, drop-in. Если call-site'ов много, вернём
-обёртку в BlockUI (адаптированный вариант готов и компилируется) — скажите.
+> ⚠️ **`ColourARGB#asQuartet()` в 26.2 не существует**, как и `ColourQuartet`. Апстрим
+> разделил метод: `asIntQuartet()` → `ColourQuartet4i` и `asFloatQuartet()` → `ColourQuartet4f`.
+> Ваша строка `new ColourARGB(team.getColor()).asQuartet()` **не скомпилируется** — в хендоффе
+> она значилась как переживаемое переименование record'а. Проверено пробником в две прогонки:
+> с `asQuartet()` — `cannot find symbol`; с заменой одного токена на `asIntQuartet()` и без
+> единой другой правки — компилируется чисто. `ColourQuartet4i` реализует `IColour`, так что
+> присваивание в `defaultColor` корректно. Две другие ваши строки уже правильные.
 
 ---
 
