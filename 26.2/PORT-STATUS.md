@@ -225,6 +225,18 @@ javac -nowarn -proc:none -Xmaxerrs 3000 --release 25 -cp "$CP" -d /tmp/out-<ро
   **Ни одна существующая публичная сигнатура не изменена**; добавлен только перегруженный
   `Configurations(String modId, …)` и `Configurations#saveAll()`.
 
+- **`ColouredVertexConsumer` восстановлен — публичное API сверх upstream 26.x.** Класс
+  `blockui/util/color/ColouredVertexConsumer.java` был удалён самим LDTTeam при переписывании
+  1.21.1 → 26.x (импорт — коммит `a44a40e`), это не регрессия Fabric-порта. Возвращён по запросу
+  MineColonies (`ColonyBorderRenderer#draw` — 32 вызова `setDefaultColor()`). Семантика сохранена
+  дословно: сквозной делегат с публичным изменяемым полем `IColour defaultColor` и одним методом
+  `setDefaultColor()` = `defaultColor.writeIntoBuffer(this)`; ничего не подменяется и не умножается.
+  Адаптация к 26.2: убран override `misc(VertexFormatElement, int...)` (метода больше нет), добавлен
+  `setLineWidth(float)` (новый abstract), `setColor(int)` переопределён явно (был default).
+  Остальные `default`-методы интерфейса намеренно не переопределены — все они вызывают
+  `this.<abstract>`, то есть проходят через обёртку. **В дереве нет ни одного вызывающего — при
+  следующем мерже с upstream не удалять как мёртвый код** (пометка продублирована в javadoc класса).
+
 ---
 
 ## Disabled content
