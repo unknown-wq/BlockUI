@@ -23,13 +23,18 @@ import java.util.stream.Collectors;
 /**
  * Root of a mod's configuration tree.
  * <p>
- * <b>Port contract K4 (a §10 cut).</b> The NeoForge {@code ModConfigSpec} builder this class used to wrap has
- * no Fabric or vanilla counterpart, so every {@code defineXxx} now simply mints an in-memory
- * {@link ConfigValue} holding the old TOML default. All the {@code defineXxx} / {@code addWatcher} signatures
- * and the {@code XXX.get()} call sites are unchanged; what is lost is persistence, per-world server configs,
- * client/server synchronisation, range/element validation on load and the generated config screen.
+ * <b>Port contract K4 (a §10 cut), partially restored.</b> The NeoForge {@code ModConfigSpec} builder this class
+ * used to wrap has no Fabric or vanilla counterpart, so every {@code defineXxx} mints a {@link ConfigValue}
+ * holding the old TOML default directly. All the {@code defineXxx} / {@code addWatcher} signatures and the
+ * {@code XXX.get()} call sites are unchanged.
+ * <p>
+ * Every minted value is registered with the {@link ConfigStore} that {@link Configurations} put in the
+ * {@link Builder}, so the tree is loaded from and saved to {@code config/<modid>-<type>.toml}. What is still
+ * lost is per-world server configs, client/server synchronisation, range/element validation at
+ * <em>definition</em> time and the generated config screen.
  *
  * @see ConfigValue
+ * @see ConfigStore
  */
 public abstract class AbstractConfiguration
 {
@@ -37,7 +42,14 @@ public abstract class AbstractConfiguration
     public static final String COMMENT_SUFFIX = ".comment";
 
     final List<ConfigWatcher<?>> watchers = new ArrayList<>();
-    private final Builder builder;
+
+    /**
+     * Where {@link #build} registers what it mints. Null when this configuration was constructed with the public
+     * no-arg {@link Builder}, i.e. outside {@link Configurations}; then nothing is persisted, as before.
+     */
+    @Nullable
+    private final ConfigStore store;
+
     private final String modId;
 
     private final Deque<String> categories = new ArrayDeque<>();
@@ -46,8 +58,15 @@ public abstract class AbstractConfiguration
 
     protected AbstractConfiguration(final Builder builder, final String modId)
     {
-        this.builder = builder;
+        this.store = builder.store();
         this.modId = modId;
+
+        // the store is created before the mod id is known - Configurations builds it, but only this subclass
+        // knows which mod it is - so this is where the file name gets resolved
+        if (store != null)
+        {
+            store.bindModId(modId);
+        }
     }
 
     protected void createCategory(final String key)
@@ -86,13 +105,15 @@ public abstract class AbstractConfiguration
     }
 
     /**
-     * Everything must call this in the end - it consumes the pending restart flag and mints the value.
+     * Everything must call this in the end - it consumes the pending restart flag, mints the value and hands it
+     * to the store that will persist it.
      */
     private <T, C extends ConfigValue<T>> C build(final String key,
         @Nullable final String defaultDesc,
         final ValueFactory<T, C> factory)
     {
-        // there is no config file any more, so the restart type is only consumed, never acted upon
+        // the config file is not watched, so a reload can never require a restart: the flag is still only
+        // consumed, never acted upon
         nextRestartType = RestartType.NONE;
 
         String comment = translate(commentTKey(key));
@@ -101,7 +122,12 @@ public abstract class AbstractConfiguration
             comment += " " + defaultDesc;
         }
 
-        return factory.create(path(key), nameTKey(key), comment);
+        final C value = factory.create(path(key), nameTKey(key), comment);
+        if (store != null)
+        {
+            store.register(value);
+        }
+        return value;
     }
 
     private static String translate(final String key, final Object... args)
