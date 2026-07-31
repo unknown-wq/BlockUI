@@ -6,34 +6,27 @@ import com.ldtteam.blockui.controls.Button;
 import com.ldtteam.blockui.controls.ButtonImage;
 import com.ldtteam.blockui.controls.Image;
 import com.ldtteam.blockui.controls.Text;
-import com.ldtteam.blockui.hooks.HookManager;
 import com.ldtteam.blockui.hooks.HookRegistries;
-import com.ldtteam.blockui.mod.container.ContainerHook;
 import com.ldtteam.blockui.util.SpacerTextComponent;
 import com.ldtteam.blockui.util.resloc.OutOfJarResourceLocation;
 import com.ldtteam.blockui.views.BOWindow;
-import com.mojang.blaze3d.platform.InputConstants;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.world.entity.player.PlayerSkin;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
-import net.neoforged.neoforge.client.event.InputEvent.MouseScrollingEvent;
-import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
-import net.neoforged.neoforge.event.TagsUpdatedEvent;
-import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
+/**
+ * Bodies of the former {@code NeoForge.EVENT_BUS} client handlers. Registration lives in
+ * {@link BlockUIClient} (contract K2); nothing here subscribes to anything by itself.
+ */
 public class ClientEventSubscriber
 {
     /**
@@ -54,18 +47,17 @@ public class ClientEventSubscriber
     }*/
 
     /**
-     * Used to catch the clientTickEvent.
-     * Call renderer cache cleaning every 5 secs (100 ticks).
+     * Start of the client tick — opens the developer test window on ctrl + alt + shift + the bound key
+     * (X by default), exactly as the NeoForge {@code ClientTickEvent.Pre} handler did.
      *
-     * @param event the catched event.
+     * @param mc the client instance handed over by {@code ClientTickEvents.START_CLIENT_TICK}.
      */
-    @SubscribeEvent
-    public static void onClientTickStart(final ClientTickEvent.Pre event)
+    public static void onClientTickStart(final Minecraft mc)
     {
-        if (Minecraft.getInstance().hasAltDown() && Minecraft.getInstance().hasControlDown() && Minecraft.getInstance().hasShiftDown())
+        if (mc.hasAltDown() && mc.hasControlDown() && mc.hasShiftDown())
         {
-            if (InputConstants.isKeyDown(Minecraft.getInstance().getWindow(), GLFW.GLFW_KEY_X) &&
-                !(Minecraft.getInstance().screen instanceof final BOScreen screen &&
+            if (BlockUIClient.isTestGuiKeyDown(mc) &&
+                !(mc.gui.screen() instanceof final BOScreen screen &&
                     screen.getWindow().getXmlResourceLocation().getPath().equals("test_gui")))
             {
                 final BOWindow window = new BOWindow(BlockUI.resLoc("test_gui"), false)
@@ -133,7 +125,7 @@ public class ClientEventSubscriber
                 PaneBuilders.textBuilder()
                     .append(Component.literal(BlockUI.MOD_ID))
                     .append(Component.literal(" - "))
-                    .append(Component.literal(ModList.get().getModFileById(BlockUI.MOD_ID).versionString()))
+                    .append(Component.literal(modVersion()))
                     .paragraphBreak()
                     .append(SpacerTextComponent.of(5))
                     .newLine()
@@ -154,15 +146,30 @@ public class ClientEventSubscriber
         }
     }
 
-    @SubscribeEvent
-    public static void onClientTickEnd(final ClientTickEvent.Post event)
+    /**
+     * End of the client tick. Call renderer cache cleaning every 5 secs (100 ticks).
+     *
+     * @param mc the client instance handed over by {@code ClientTickEvents.END_CLIENT_TICK}.
+     */
+    public static void onClientTickEnd(final Minecraft mc)
     {
-        if (Minecraft.getInstance().level != null)
+        if (mc.level != null)
         {
             Profiler.get().push("hook_manager_tick");
-            HookRegistries.tick(Minecraft.getInstance().level.getGameTime());
+            HookRegistries.tick(mc.level.getGameTime());
             Profiler.get().pop();
         }
+    }
+
+    /**
+     * Fabric has no {@code ModList}; the loader metadata is the replacement.
+     */
+    private static String modVersion()
+    {
+        return FabricLoader.getInstance()
+            .getModContainer(BlockUI.MOD_ID)
+            .map(container -> container.getMetadata().getVersion().getFriendlyString())
+            .orElse("unknown");
     }
 
     @SafeVarargs
@@ -189,35 +196,5 @@ public class ClientEventSubscriber
             }.openAsLayer();
         });
         return button;
-    }
-
-    /**
-     * Used to catch the scroll when no gui is open.
-     *
-     * @param event the catched event.
-     */
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void onMouseScrollEvent(final MouseScrollingEvent event)
-    {
-        // cancel in-game scrolling when raytraced gui has scrolling list
-        event.setCanceled(HookManager.onScroll(event.getScrollDeltaX(), event.getScrollDeltaY()));
-    }
-
-    /**
-     * Hook test container gui.
-     */
-    @SubscribeEvent
-    public static void onTagsUpdated(final TagsUpdatedEvent event)
-    {
-        ContainerHook.init();
-    }
-
-    @SubscribeEvent
-    public static void renderOverlay(final RenderGuiLayerEvent.Pre event)
-    {
-        if (Minecraft.getInstance().screen instanceof BOScreen && event.getName().equals(VanillaGuiLayers.CROSSHAIR))
-        {
-            event.setCanceled(true);
-        }
     }
 }

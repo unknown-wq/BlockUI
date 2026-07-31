@@ -6,5 +6,7 @@
     "blockui.config.default.boolean": "[Default: %s]",
     "blockui.config.default.string": "[Default: %s]",
     "blockui.config.default.enum": "[Default: %s, values: %s]",
-    "blockui.config.default.number": "[Default: %s, min: %s, max: %s]"
+    "blockui.config.default.number": "[Default: %s, min: %s, max: %s]",
+    "key.category.blockui.main": "BlockUI",
+    "key.blockui.open_test_gui": "Open test GUI (hold ctrl + alt + shift too)"
 }

@@ -13,6 +13,11 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.TextColor;
+
+import java.util.Locale;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Reusable builder for multiline text elements.
@@ -253,12 +258,52 @@ public abstract class AbstractTextBuilder<P extends AbstractTextElement, R exten
                 return underlined();
 
             default:
-                if (!textFormatting.isColor())
+                final Integer legacy = legacyColor(textFormatting);
+                if (legacy == null)
                 {
                     throw new IllegalArgumentException("Unknown non-color textformatting.");
                 }
-                return color(textFormatting.getColor() == null ? defaultColor : textFormatting.getColor());
+                return color(legacy);
         }
+    }
+
+    /**
+     * 26.2: {@link ChatFormatting} no longer carries colour data, it moved to {@link TextColor#fromLegacyFormat(ChatFormatting)}.
+     *
+     * @param textFormatting vanilla formatting code, may be null
+     * @return packed rgb of given formatting or null if it is not a colour
+     */
+    private static @Nullable Integer legacyColor(final @Nullable ChatFormatting textFormatting)
+    {
+        if (textFormatting == null)
+        {
+            return null;
+        }
+        final TextColor textColor = TextColor.fromLegacyFormat(textFormatting);
+        return textColor == null ? null : textColor.getValue();
+    }
+
+    /**
+     * 26.2: replacement for the removed {@code ChatFormatting.getByName(String)}, same normalisation as vanilla used to do.
+     *
+     * @param name human readable formatting name
+     * @return matching formatting or null
+     */
+    private static @Nullable ChatFormatting formattingByName(final @Nullable String name)
+    {
+        if (name == null)
+        {
+            return null;
+        }
+        final String cleaned = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        for (final ChatFormatting formatting : ChatFormatting.values())
+        {
+            if (formatting.name().toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "").equals(cleaned))
+            {
+                return formatting;
+            }
+        }
+        return null;
     }
 
     /**
@@ -269,8 +314,8 @@ public abstract class AbstractTextBuilder<P extends AbstractTextElement, R exten
      */
     public R colorVanillaCode(final char code)
     {
-        final ChatFormatting tf = ChatFormatting.getByCode(code);
-        return color(tf == null || tf.getColor() == null ? defaultColor : tf.getColor());
+        final Integer tf = legacyColor(ChatFormatting.getByCode(code));
+        return color(tf == null ? defaultColor : tf);
     }
 
     /**
@@ -281,8 +326,8 @@ public abstract class AbstractTextBuilder<P extends AbstractTextElement, R exten
      */
     public R colorName(final String name)
     {
-        final ChatFormatting tf = ChatFormatting.getByName(name);
-        return color(Color.getByName(name, tf == null || tf.getColor() == null ? color : tf.getColor()));
+        final Integer tf = legacyColor(formattingByName(name));
+        return color(Color.getByName(name, tf == null ? color : tf));
     }
 
     /**
@@ -309,8 +354,7 @@ public abstract class AbstractTextBuilder<P extends AbstractTextElement, R exten
      */
     public R shadowColorVanillaCode(final char code)
     {
-        final ChatFormatting tf = ChatFormatting.getByCode(code);
-        return shadowColor(tf == null || tf.getColor() == null ? null : tf.getColor());
+        return shadowColor(legacyColor(ChatFormatting.getByCode(code)));
     }
 
     /**
@@ -321,8 +365,8 @@ public abstract class AbstractTextBuilder<P extends AbstractTextElement, R exten
      */
     public R shadowColorName(final String name)
     {
-        final ChatFormatting tf = ChatFormatting.getByName(name);
-        return shadowColor(Color.getByName(name, tf == null || tf.getColor() == null ? shadowColor : tf.getColor()));
+        final Integer tf = legacyColor(formattingByName(name));
+        return shadowColor(Color.getByName(name, tf == null ? shadowColor : tf));
     }
 
     /**

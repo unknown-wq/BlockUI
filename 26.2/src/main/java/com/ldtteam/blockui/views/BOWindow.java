@@ -7,9 +7,12 @@ import com.ldtteam.blockui.PaneParams;
 import com.ldtteam.blockui.Parsers;
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.resources.Identifier;
+
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.ToDoubleBiFunction;
 
@@ -54,6 +57,12 @@ public class BOWindow extends View
     protected WindowRenderType windowRenderType = WindowRenderType.OVERSIZED_VANILLA;
 
     protected Identifier xmlResourceLocation;
+
+    /**
+     * 26.2: NeoForge's gui layer stack ({@code Minecraft#pushGuiLayer}/{@code popGuiLayer}) does not exist in vanilla nor
+     * in Fabric. {@link #openAsLayer()} therefore remembers the screen it covered and {@link #close()} restores it.
+     */
+    private @Nullable Screen screenBelowLayer = null;
 
     /**
      * Create a window from an xml file.
@@ -184,7 +193,10 @@ public class BOWindow extends View
      */
     public void open()
     {
-        mc.submit(() -> mc.setScreen(screen));
+        mc.submit(() -> {
+            screenBelowLayer = null;
+            mc.gui.setScreen(screen);
+        });
     }
 
     /**
@@ -192,7 +204,11 @@ public class BOWindow extends View
      */
     public void openAsLayer()
     {
-        mc.submit(() -> mc.pushGuiLayer(screen));
+        mc.submit(() -> {
+            final Screen current = mc.gui.screen();
+            screenBelowLayer = current == screen ? null : current;
+            mc.gui.setScreen(screen);
+        });
     }
 
     /**
@@ -284,7 +300,9 @@ public class BOWindow extends View
      */
     public void close()
     {
-        Minecraft.getInstance().popGuiLayer();
+        final Screen below = screenBelowLayer;
+        screenBelowLayer = null;
+        Minecraft.getInstance().gui.setScreen(below);
     }
 
     /**

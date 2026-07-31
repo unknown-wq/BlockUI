@@ -13,18 +13,19 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.render.pip.PictureInPictureRenderer;
-import net.minecraft.client.renderer.MultiBufferSource.BufferSource;
 import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.BlockModelRenderState;
+import net.minecraft.client.renderer.block.BlockModelResolver;
 import net.minecraft.client.renderer.block.FluidRenderer;
 import net.minecraft.client.renderer.block.FluidStateModelSet;
 import net.minecraft.client.renderer.block.model.BlockDisplayContext;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
-import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.state.gui.pip.PictureInPictureRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.ModelManager;
 import net.minecraft.client.resources.model.cuboid.ItemTransform;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.LightCoordsUtil;
@@ -33,9 +34,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.material.FluidState;
-import net.neoforged.neoforge.client.fluid.CustomFluidRenderer;
-import net.neoforged.neoforge.client.model.pipeline.VertexConsumerWrapper;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 import org.joml.Matrix3x2f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
@@ -50,11 +50,19 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
     // TODO: Static instance should be fine since gui rendering is on single thread
     private static final BlockDisplayContext BLOCK_DISPLAY_CONTEXT = BlockDisplayContext.create();
     private static final SingleBlockNeighborhood NEIGHBORHOOD = new SingleBlockNeighborhood();
+
+    /**
+     * 26.2: {@code Minecraft#getBlockModelResolver()} is gone, the instance is now a local in the Minecraft ctor which
+     * is only handed to the render dispatchers. We keep our own, rebuilt whenever the {@link ModelManager} is swapped.
+     */
+    private static @Nullable ModelManager blockModelResolverOwner = null;
+    private static @Nullable BlockModelResolver blockModelResolver = null;
+
     private @Nullable BlockStateRenderingData lastData = null;
 
-    public BlockStatePipRenderer(final BufferSource bufferSource)
+    public BlockStatePipRenderer()
     {
-        super(bufferSource);
+        super();
     }
 
     @Override
@@ -63,8 +71,21 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
         return BlockStateRenderState.class;
     }
 
+    private static BlockModelResolver blockModelResolver()
+    {
+        final ModelManager modelManager = Minecraft.getInstance().getModelManager();
+        if (blockModelResolver == null || blockModelResolverOwner != modelManager)
+        {
+            blockModelResolverOwner = modelManager;
+            blockModelResolver = new BlockModelResolver(modelManager);
+        }
+        return blockModelResolver;
+    }
+
     @Override
-    protected void renderToTexture(final BlockStateRenderState renderState, final PoseStack poseStack)
+    protected void renderToTexture(final BlockStateRenderState renderState,
+        final PoseStack poseStack,
+        final SubmitNodeCollector submitNodeCollector)
     {
         final BlockStateRenderingData data = renderState.data;
         lastData = data;
@@ -81,11 +102,11 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
         poseStack.last().mulPose(renderState.itemModel().firstLayer().localTransform);
 
         // render block and BE
-        final FeatureRenderDispatcher featureRenderDispatcher = Minecraft.getInstance().gameRenderer.getFeatureRenderDispatcher();
-
-        Minecraft.getInstance().gameRenderer.getLighting().setupFor(Lighting.Entry.ITEMS_FLAT);
+        // 26.2: the SubmitNodeCollector is handed to us by PictureInPictureRenderer#prepare, which also runs
+        // FeatureRenderDispatcher#renderAllFeatures(SubmitNodeStorage) for us afterwards
+        Minecraft.getInstance().gameRenderer.lighting().setupFor(Lighting.Entry.ITEMS_FLAT);
         final int light = LightCoordsUtil.pack(15, 15);
-        renderState.blockModel.submit(poseStack, featureRenderDispatcher.getSubmitNodeStorage(), light, OverlayTexture.NO_OVERLAY, 0);
+        renderState.blockModel.submit(poseStack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY, 0);
 
         if (renderState.blockEntityModel() != null)
         {
@@ -93,7 +114,7 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
             {
                 final var state = renderState.blockEntityModel();
                 final var renderer = Minecraft.getInstance().getBlockEntityRenderDispatcher().getRenderer(state);
-                renderer.submit(state, poseStack, featureRenderDispatcher.getSubmitNodeStorage(), null);
+                renderer.submit(state, poseStack, submitNodeCollector, null);
             }
             catch (final Exception e)
             {
@@ -109,41 +130,36 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
             final FluidStateModelSet fluidModelSet = Minecraft.getInstance().getModelManager().getFluidStateModelSet();
             final FluidRenderer fluidRenderer = new FluidRenderer(fluidModelSet);
 
-            final var customRenderer = fluidModelSet.get(fluidState).customRenderer();
+            // 26.2/Fabric: NeoForge's CustomFluidRenderer (FluidModel#customRenderer) has no equivalent,
+            // modded fluids always go through the vanilla tesselator now
 
             // losely based on block rendering, cuz ChunkSectionLayer stupid
             // solid + cutout pass
-            featureRenderDispatcher.getSubmitNodeStorage()
-                .submitCustomGeometry(poseStack,
-                    Sheets.cutoutBlockSheet(),
-                    (pose, buffer) -> renderFluid(data,
-                        fluidState,
-                        fluidRenderer,
-                        customRenderer,
-                        layer -> layer != ChunkSectionLayer.TRANSLUCENT,
-                        buffer,
-                        pose));
+            submitNodeCollector.submitCustomGeometry(poseStack,
+                Sheets.cutoutBlockItemSheet(),
+                (pose, buffer) -> renderFluid(data,
+                    fluidState,
+                    fluidRenderer,
+                    layer -> layer != ChunkSectionLayer.TRANSLUCENT,
+                    buffer,
+                    pose));
             // translucent pass
-            featureRenderDispatcher.getSubmitNodeStorage()
-                .submitCustomGeometry(poseStack,
-                    Sheets.translucentBlockSheet(),
-                    (pose, buffer) -> renderFluid(data,
-                        fluidState,
-                        fluidRenderer,
-                        customRenderer,
-                        layer -> layer == ChunkSectionLayer.TRANSLUCENT,
-                        buffer,
-                        pose));
+            submitNodeCollector.submitCustomGeometry(poseStack,
+                Sheets.translucentBlockItemSheet(),
+                (pose, buffer) -> renderFluid(data,
+                    fluidState,
+                    fluidRenderer,
+                    layer -> layer == ChunkSectionLayer.TRANSLUCENT,
+                    buffer,
+                    pose));
         }
 
         poseStack.popPose();
-        featureRenderDispatcher.renderAllFeatures();
     }
 
     private void renderFluid(final BlockStateRenderingData data,
         final FluidState fluidState,
         final FluidRenderer fluidRenderer,
-        final @Nullable CustomFluidRenderer customRenderer,
         final Predicate<ChunkSectionLayer> targetLayer,
         final VertexConsumer buffer,
         final PoseStack.Pose pose)
@@ -152,11 +168,7 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
             layer -> targetLayer.test(layer) ? new PoseTransformingVertexConsumer(buffer, pose) : NoopVertexConsumer.INSTANCE;
         NEIGHBORHOOD.blockState = data.blockState();
         NEIGHBORHOOD.blockEntity = data.blockEntity();
-        if (customRenderer == null ||
-            !customRenderer.renderFluid(fluidRenderer, fluidState, NEIGHBORHOOD, BlockPos.ZERO, output, data.blockState()))
-        {
-            fluidRenderer.tesselate(NEIGHBORHOOD, BlockPos.ZERO, output, data.blockState(), fluidState);
-        }
+        fluidRenderer.tesselate(NEIGHBORHOOD, BlockPos.ZERO, output, data.blockState(), fluidState);
         NEIGHBORHOOD.blockState = null;
         NEIGHBORHOOD.blockEntity = null;
     }
@@ -177,6 +189,17 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
     protected boolean textureIsReadyToBlit(final BlockStateRenderState renderState)
     {
         return renderState.data == lastData;
+    }
+
+    /**
+     * TODO(port-26.2): this belongs on {@link BOGuiGraphics} — see the agent D report. NeoForge added
+     * {@code GuiGraphics#submitPictureInPictureRenderState}; vanilla 26.2 only offers
+     * {@code GuiRenderState#addPicturesInPictureState} (GuiRenderState.java:74), reached through the
+     * AccessWidened {@code GuiGraphicsExtractor#guiRenderState}.
+     */
+    private static void submitPip(final BOGuiGraphics target, final PictureInPictureRenderState state)
+    {
+        target.guiRenderState.addPicturesInPictureState(state);
     }
 
     public record BlockStateRenderState(Matrix3x2f pose,
@@ -201,11 +224,13 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
             final int x = 0, y = 0;
             final int w = RENDER_SIZE_I, h = RENDER_SIZE_I;
             UiRenderMacros.innerSubmit(target, x, y, w, h, (pose, bounds, scissors) -> {
+                final Minecraft mc = Minecraft.getInstance();
+
                 final BlockModelRenderState blockModel = new BlockModelRenderState();
-                target.minecraft.getBlockModelResolver().update(blockModel, data.blockState(), BLOCK_DISPLAY_CONTEXT);
+                blockModelResolver().update(blockModel, data.blockState(), BLOCK_DISPLAY_CONTEXT);
 
                 final ItemStackRenderState itemModel = new ItemStackRenderState();
-                // target.minecraft.getItemModelResolver()
+                // mc.getItemModelResolver()
                 // .updateForLiving(itemModel, itemStack, ItemDisplayContext.GUI, Minecraft.getInstance().player);
 
                 if (itemModel.firstLayer().itemTransform.equals(ItemTransform.NO_TRANSFORM) ||
@@ -219,29 +244,30 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
                     // but block/cross models are still terrible
                     // solution would be to find out which things need localTransform applied
                     // then remove the itemRenderState as whole since we are only using it for transformation now
-                    target.minecraft.getItemModelResolver()
+                    mc.getItemModelResolver()
                         .updateForLiving(itemModel,
                             new ItemStack(Blocks.STONE),
                             ItemDisplayContext.GUI,
-                            Minecraft.getInstance().player);
+                            mc.player);
                 }
 
                 BlockEntityRenderState blockEntityModel = null;
                 if (data.blockEntity() != null)
                 {
-                    final var renderer = target.minecraft.getBlockEntityRenderDispatcher().getRenderer(data.blockEntity());
+                    final var renderer = mc.getBlockEntityRenderDispatcher().getRenderer(data.blockEntity());
                     if (renderer != null)
                     {
                         blockEntityModel = target.getFakeLevel()
-                            .useFakeLevelContext(data.blockState(), data.blockEntity(), target.minecraft.level, fakeLevel -> {
+                            .useFakeLevelContext(data.blockState(), data.blockEntity(), mc.level, fakeLevel -> {
                                 final BlockEntityRenderState state = renderer.createRenderState();
+                                // 26.2: BlockPos#getCenter is gone, Vec3.atCenterOf is the replacement
                                 renderer.extractRenderState(data
-                                    .blockEntity(), state, 0, data.blockEntity().getBlockPos().getCenter(), null);
+                                    .blockEntity(), state, 0, Vec3.atCenterOf(data.blockEntity().getBlockPos()), null);
                                 return state;
                             });
                     }
                 }
-                target.submitPictureInPictureRenderState(new BlockStateRenderState(pose,
+                submitPip(target, new BlockStateRenderState(pose,
                     x,
                     x + w,
                     y,
@@ -310,13 +336,17 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
         }
     }
 
-    private static final class PoseTransformingVertexConsumer extends VertexConsumerWrapper
+    /**
+     * 26.2/Fabric: NeoForge's {@code VertexConsumerWrapper} does not exist, so we delegate by hand.
+     */
+    private static final class PoseTransformingVertexConsumer implements VertexConsumer
     {
+        private final VertexConsumer parent;
         private final Pose pose;
 
         public PoseTransformingVertexConsumer(final VertexConsumer parent, final PoseStack.Pose pose)
         {
-            super(parent);
+            this.parent = parent;
             this.pose = pose;
         }
 
@@ -326,7 +356,8 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
             final var vec = new Vector4f(x, y, z, 1);
             pose.pose().transform(vec);
             vec.div(vec.w);
-            return super.addVertex(vec.x(), vec.y(), vec.z());
+            parent.addVertex(vec.x(), vec.y(), vec.z());
+            return this;
         }
 
         @Override
@@ -335,7 +366,50 @@ public class BlockStatePipRenderer extends PictureInPictureRenderer<BlockStateRe
             final var vec = new Vector3f(x, y, z);
             pose.transformNormal(x, y, z, vec);
             vec.normalize();
-            return super.setNormal(vec.x(), vec.y(), vec.z());
+            parent.setNormal(vec.x(), vec.y(), vec.z());
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(final int r, final int g, final int b, final int a)
+        {
+            parent.setColor(r, g, b, a);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(final int color)
+        {
+            parent.setColor(color);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(final float u, final float v)
+        {
+            parent.setUv(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(final int u, final int v)
+        {
+            parent.setUv1(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(final int u, final int v)
+        {
+            parent.setUv2(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setLineWidth(final float width)
+        {
+            parent.setLineWidth(width);
+            return this;
         }
     }
 }

@@ -758,7 +758,7 @@ public class Pane extends UiRenderMacros
     protected synchronized void scissorsEnd(final BOGuiGraphics target)
     {
         final Matrix3x2fStack ms = target.pose();
-        final ScreenRectangle popped = target.peekScissorStack();
+        final ScreenRectangle popped = target.scissorStack.peek();
         if (debugging)
         {
             final int color = 0xffff0000;

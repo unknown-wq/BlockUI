@@ -9,7 +9,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.renderer.state.gui.GuiRenderState;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix3x2fStack;
 
@@ -20,22 +19,27 @@ public class BOGuiGraphics extends GuiGraphicsExtractor
     private int cursorMaxDepth = -1;
     private CursorType selectedCursor = Cursor.DEFAULT;
 
+    /**
+     * Own handle on the client. {@code GuiGraphicsExtractor#minecraft} is private in 26.2 and there is no
+     * accessor for it, so we keep the very same instance the super class was built with.
+     */
+    private final Minecraft mc;
+
     public BOGuiGraphics(final Minecraft mc, final CountingMatrix3x2fStack ps, final GuiRenderState renderState, final int mx, final int my)
     {
         super(mc, ps, renderState, mx, my);
+        this.mc = mc;
     }
 
+    /**
+     * NeoForge {@code IClientItemExtensions#getFont} has no Fabric/vanilla equivalent in 26.2, items can no longer
+     * override the stack-count font, so this is always the vanilla font now.
+     *
+     * @param itemStack kept for source compatibility of the callers, unused
+     */
     private Font getFont(@Nullable final ItemStack itemStack)
     {
-        if (itemStack != null)
-        {
-            final Font font = IClientItemExtensions.of(itemStack).getFont(itemStack, IClientItemExtensions.FontContext.ITEM_COUNT);
-            if (font != null)
-            {
-                return font;
-            }
-        }
-        return minecraft.font;
+        return mc.font;
     }
 
     public void renderItemDecorations(final ItemStack itemStack, final int x, final int y)
@@ -55,8 +59,8 @@ public class BOGuiGraphics extends GuiGraphicsExtractor
 
     public int drawString(final String text, final int x, final int y, final int color, final boolean shadow)
     {
-        super.text(minecraft.font, text, x, y, color, shadow);
-        return x + minecraft.font.width(text); // should return end pos
+        super.text(mc.font, text, x, y, color, shadow);
+        return x + mc.font.width(text); // should return end pos
     }
 
     public void setCursor(final CursorType cursor)
@@ -76,7 +80,7 @@ public class BOGuiGraphics extends GuiGraphicsExtractor
     {
         if (Pane.debugging)
         {
-            drawString(selectedCursor.toString(), debugXoffset, -minecraft.font.lineHeight, Color.getByName("white"));
+            drawString(selectedCursor.toString(), debugXoffset, -mc.font.lineHeight, Color.getByName("white"));
         }
 
         // requestCursor(selectedCursor);

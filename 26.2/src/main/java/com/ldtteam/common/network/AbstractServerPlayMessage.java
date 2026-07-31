@@ -2,7 +2,6 @@ package com.ldtteam.common.network;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * Client (sender) -> Server (receiver) message
@@ -37,5 +36,5 @@ public abstract class AbstractServerPlayMessage extends AbstractUnsidedPlayMessa
      * @param context network context
      * @param player  server player which is receiving this packet
      */
-    protected abstract void onExecute(final IPayloadContext context, final ServerPlayer player);
+    protected abstract void onExecute(final PlayMessageContext context, final ServerPlayer player);
 }

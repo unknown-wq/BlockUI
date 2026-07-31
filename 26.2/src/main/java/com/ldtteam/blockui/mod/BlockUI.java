@@ -1,16 +1,22 @@
 package com.ldtteam.blockui.mod;
 
+import com.ldtteam.blockui.mod.container.ContainerHook;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.CommonLifecycleEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.javafmlmod.FMLModContainer;
-import net.neoforged.neoforge.common.NeoForge;
+
 import java.util.HashMap;
 import java.util.Map;
 
-@Mod(BlockUI.MOD_ID)
-public class BlockUI
+/**
+ * Common entrypoint (contract K2). Replaces the NeoForge {@code @Mod} constructor.
+ *
+ * <p>Everything client-side lives in {@link BlockUIClient}; this class keeps only the mod-wide
+ * constants and the single lifecycle hook that is not client-only.</p>
+ */
+public class BlockUI implements ModInitializer
 {
     public static final String MOD_ID = "blockui";
 
@@ -19,20 +25,27 @@ public class BlockUI
      */
     public static final Map<String, Identifier> NAMESPACE_TO_ATLAS_MAP = new HashMap<>();
 
-    public BlockUI(final FMLModContainer modContainer, final Dist dist)
+    @Override
+    public void onInitialize()
     {
-        final IEventBus modBus = modContainer.getEventBus();
-        final IEventBus forgeBus = NeoForge.EVENT_BUS;
-
-        if (dist.isClient())
-        {
-            modBus.register(ClientLifecycleSubscriber.class);
-            forgeBus.register(ClientEventSubscriber.class);
-        }
+        // was: @SubscribeEvent onTagsUpdated(TagsUpdatedEvent) in ClientEventSubscriber
+        CommonLifecycleEvents.TAGS_LOADED.register((registries, client) -> ContainerHook.init());
     }
 
     public static Identifier resLoc(final String path)
     {
         return Identifier.fromNamespaceAndPath(MOD_ID, path);
+    }
+
+    /**
+     * Contract K6 — the single replacement for NeoForge {@code FMLEnvironment.dist.isClient()}.
+     * The signature is frozen: the seven callers in {@code com.ldtteam.common} and
+     * {@code com.ldtteam.blockui} use exactly this method and nothing else.
+     *
+     * @return true when running on a physical client (integrated server included).
+     */
+    public static boolean isClient()
+    {
+        return FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT;
     }
 }

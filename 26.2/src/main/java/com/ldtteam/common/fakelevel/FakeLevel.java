@@ -21,6 +21,8 @@ import net.minecraft.world.clock.ClockManager;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageSources;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragonPart;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.item.alchemy.PotionBrewing;
@@ -60,9 +62,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.ticks.BlackholeTickAccess;
 import net.minecraft.world.ticks.LevelTickAccess;
-import net.neoforged.neoforge.entity.PartEntity;
-import net.neoforged.neoforge.model.data.ModelData;
-import net.neoforged.neoforge.model.data.ModelDataManager;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
@@ -105,9 +104,8 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
 
     protected final FakeChunkSource chunkSource;
     protected final FakeLevelLightEngine lightEngine;
-    protected final ModelDataManager modelDataManager;
     protected FakeLevelEntityGetterAdapter levelEntityGetter = FakeLevelEntityGetterAdapter.EMPTY;
-    protected List<PartEntity<?>> dragonParts = List.of();
+    protected List<EnderDragonPart> dragonParts = List.of();
     // TODO: this is currently manually filled by class user - ideally if not filled yet this should get constructed from levelSource
     // manually
     protected Map<BlockPos, BlockEntity> blockEntities = Collections.emptyMap();
@@ -152,7 +150,6 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
         this.scoreboard = scoreboard;
         this.overrideBeLevel = overrideBeLevel;
         this.chunkSource = new FakeChunkSource(this);
-        this.modelDataManager = new ModelDataManager(this);
         this.lightEngine = new FakeLevelLightEngine(this);
 
         setRealLevel(realLevel); // intentionally due to init
@@ -232,7 +229,16 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     public void setEntities(final Collection<? extends Entity> entities)
     {
         levelEntityGetter = entities.isEmpty() ? FakeLevelEntityGetterAdapter.EMPTY : FakeLevelEntityGetterAdapter.ofEntities(entities);
-        dragonParts = entities.stream().filter(Entity::isMultipartEntity).map(Entity::getParts).flatMap(Arrays::stream).toList();
+        // 26.2: NeoForge's generic multipart API (PartEntity, Entity#isMultipartEntity, Entity#getParts) is
+        // gone; vanilla Level#dragonParts() is typed to EnderDragonPart and the parts come off the dragon
+        // (/opt/mc-src/net/minecraft/world/level/Level.java:876,
+        // /opt/mc-src/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java:739).
+        dragonParts = entities.stream()
+            .filter(EnderDragon.class::isInstance)
+            .map(EnderDragon.class::cast)
+            .map(EnderDragon::getSubEntities)
+            .flatMap(Arrays::stream)
+            .toList();
     }
 
     // ========================================
@@ -389,7 +395,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public Entity getEntity(int id)
     {
         return levelEntityGetter.get(id);
@@ -432,6 +438,11 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
         return chunkSource;
     }
 
+    // TODO(port-26.2): DISABLED - NeoForge's ModelData/ModelDataManager have no Fabric counterpart (contract
+    // K5). The 26.2 equivalent is FabricBlockGetter#getBlockEntityRenderData(BlockPos), whose default
+    // implementation already resolves this level's block entity via getBlockEntity(pos), so nothing has to be
+    // overridden here.
+    /*
     @Override
     public ModelData getModelData(BlockPos pos)
     {
@@ -444,6 +455,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     {
         return modelDataManager;
     }
+    */
 
     @Override
     public LevelLightEngine getLightEngine()
@@ -458,7 +470,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public Collection<PartEntity<?>> dragonParts()
+    public Collection<EnderDragonPart> dragonParts()
     {
         return dragonParts;
     }
@@ -684,7 +696,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void levelEvent(@javax.annotation.Nullable Entity p_46771_, int p_46772_, BlockPos p_46773_, int p_46774_)
+    public void levelEvent(@Nullable Entity p_46771_, int p_46772_, BlockPos p_46773_, int p_46774_)
     {
         // Noop
     }
@@ -699,11 +711,14 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
         // Noop
     }
 
+    // TODO(port-26.2): DISABLED - Level#addFreshBlockEntities was NeoForge-only, no vanilla 26.2 counterpart
+    /*
     @Override
     public void addFreshBlockEntities(Collection<BlockEntity> beList)
     {
         // Noop
     }
+    */
 
     @Override
     public void blockEvent(BlockPos p_46582_, Block p_46583_, int p_46584_, int p_46585_)
@@ -718,15 +733,17 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public boolean destroyBlock(BlockPos p_46626_, boolean p_46627_, @javax.annotation.Nullable Entity p_46628_, int p_46629_)
+    public boolean destroyBlock(BlockPos p_46626_, boolean p_46627_, @Nullable Entity p_46628_, int p_46629_)
     {
         // Noop
         return false;
     }
 
+    // TODO(port-26.2): DISABLED - Level#markAndNotifyBlock was NeoForge-only, no vanilla 26.2 counterpart
+    /*
     @Override
     public void markAndNotifyBlock(BlockPos p_46605_,
-        @javax.annotation.Nullable LevelChunk levelchunk,
+        @Nullable LevelChunk levelchunk,
         BlockState blockstate,
         BlockState p_46606_,
         int p_46607_,
@@ -734,6 +751,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     {
         // Noop
     }
+    */
 
     @Override
     public boolean mayInteract(Entity p_46557_, BlockPos p_46558_)
@@ -816,17 +834,23 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
         // Noop
     }
 
+    // TODO(port-26.2): DISABLED - capabilities are NeoForge-only and have no Fabric replacement (bundle part IV §5)
+    /*
     @Override
     public void invalidateCapabilities(BlockPos pos)
     {
         // Noop
     }
+    */
 
+    // TODO(port-26.2): DISABLED - capabilities are NeoForge-only and have no Fabric replacement (bundle part IV §5)
+    /*
     @Override
     public void invalidateCapabilities(ChunkPos pos)
     {
         // Noop
     }
+    */
 
     @Override
     public void updateNeighborsAt(BlockPos pos, Block sourceBlock, @Nullable Orientation orientation)
@@ -925,7 +949,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void explode(@javax.annotation.Nullable Entity p_256599_,
+    public void explode(@Nullable Entity p_256599_,
         double p_255914_,
         double p_255684_,
         double p_255843_,
@@ -936,7 +960,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void explode(@javax.annotation.Nullable Entity p_255682_,
+    public void explode(@Nullable Entity p_255682_,
         double p_255803_,
         double p_256403_,
         double p_256538_,
@@ -948,9 +972,9 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void explode(@javax.annotation.Nullable Entity p_255653_,
-        @javax.annotation.Nullable DamageSource p_256558_,
-        @javax.annotation.Nullable ExplosionDamageCalculator p_255929_,
+    public void explode(@Nullable Entity p_255653_,
+        @Nullable DamageSource p_256558_,
+        @Nullable ExplosionDamageCalculator p_255929_,
         Vec3 p_256001_,
         float p_255963_,
         boolean p_256099_,
@@ -960,9 +984,9 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void explode(@javax.annotation.Nullable Entity p_256145_,
-        @javax.annotation.Nullable DamageSource p_256004_,
-        @javax.annotation.Nullable ExplosionDamageCalculator p_255696_,
+    public void explode(@Nullable Entity p_256145_,
+        @Nullable DamageSource p_256004_,
+        @Nullable ExplosionDamageCalculator p_255696_,
         double p_256208_,
         double p_256036_,
         double p_255746_,
@@ -992,14 +1016,14 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BlockGetter getChunkForCollisions(int p_46711_, int p_46712_)
     {
         return super.getChunkForCollisions(p_46711_, p_46712_);
     }
 
     @Override
-    public List<Entity> getEntities(@javax.annotation.Nullable Entity p_46536_, AABB p_46537_, Predicate<? super Entity> p_46538_)
+    public List<Entity> getEntities(@Nullable Entity p_46536_, AABB p_46537_, Predicate<? super Entity> p_46538_)
     {
         return super.getEntities(p_46536_, p_46537_, p_46538_);
     }
@@ -1054,7 +1078,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public MinecraftServer getServer()
     {
         return super.getServer();
@@ -1163,7 +1187,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void playSeededSound(@javax.annotation.Nullable Entity p_220363_,
+    public void playSeededSound(@Nullable Entity p_220363_,
         double p_220364_,
         double p_220365_,
         double p_220366_,
@@ -1177,7 +1201,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void playSound(@javax.annotation.Nullable Entity p_252137_,
+    public void playSound(@Nullable Entity p_252137_,
         BlockPos p_251749_,
         SoundEvent p_248842_,
         SoundSource p_251104_,
@@ -1188,7 +1212,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void playSound(@javax.annotation.Nullable Entity p_46551_,
+    public void playSound(@Nullable Entity p_46551_,
         Entity p_46552_,
         SoundEvent p_46553_,
         SoundSource p_46554_,
@@ -1199,7 +1223,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void playSound(@javax.annotation.Nullable Entity p_46543_,
+    public void playSound(@Nullable Entity p_46543_,
         double p_46544_,
         double p_46545_,
         double p_46546_,
@@ -1309,7 +1333,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public void playSound(@javax.annotation.Nullable Entity p_251195_, BlockPos p_250192_, SoundEvent p_249887_, SoundSource p_250593_)
+    public void playSound(@Nullable Entity p_251195_, BlockPos p_250192_, SoundEvent p_249887_, SoundSource p_250593_)
     {
         super.playSound(p_251195_, p_250192_, p_249887_, p_250593_);
     }
@@ -1345,7 +1369,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public List<VoxelShape> getEntityCollisions(@javax.annotation.Nullable Entity p_186447_, AABB p_186448_)
+    public List<VoxelShape> getEntityCollisions(@Nullable Entity p_186447_, AABB p_186448_)
     {
         return super.getEntityCollisions(p_186447_, p_186448_);
     }
@@ -1357,13 +1381,13 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public boolean isUnobstructed(@javax.annotation.Nullable Entity p_45828_, VoxelShape p_45829_)
+    public boolean isUnobstructed(@Nullable Entity p_45828_, VoxelShape p_45829_)
     {
         return super.isUnobstructed(p_45828_, p_45829_);
     }
 
     @Override
-    public List<Entity> getEntities(@javax.annotation.Nullable Entity p_45934_, AABB p_45935_)
+    public List<Entity> getEntities(@Nullable Entity p_45934_, AABB p_45935_)
     {
         return super.getEntities(p_45934_, p_45935_);
     }
@@ -1381,32 +1405,32 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public Player getNearestPlayer(Entity p_45931_, double p_45932_)
     {
         return super.getNearestPlayer(p_45931_, p_45932_);
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public Player getNearestPlayer(double p_45919_,
         double p_45920_,
         double p_45921_,
         double p_45922_,
-        @javax.annotation.Nullable Predicate<Entity> p_45923_)
+        @Nullable Predicate<Entity> p_45923_)
     {
         return super.getNearestPlayer(p_45919_, p_45920_, p_45921_, p_45922_, p_45923_);
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public Player getNearestPlayer(double p_45925_, double p_45926_, double p_45927_, double p_45928_, boolean p_45929_)
     {
         return super.getNearestPlayer(p_45925_, p_45926_, p_45927_, p_45928_, p_45929_);
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public Player getPlayerByUUID(UUID p_46004_)
     {
         return super.getPlayerByUUID(p_46004_);
@@ -1545,7 +1569,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BlockHitResult clipWithInteractionOverride(Vec3 p_45559_,
         Vec3 p_45560_,
         BlockPos p_45561_,
@@ -1640,13 +1664,13 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public boolean collidesWithSuffocatingBlock(@javax.annotation.Nullable Entity p_186438_, AABB p_186439_)
+    public boolean collidesWithSuffocatingBlock(@Nullable Entity p_186438_, AABB p_186439_)
     {
         return super.collidesWithSuffocatingBlock(p_186438_, p_186439_);
     }
 
     @Override
-    public Optional<Vec3> findFreePosition(@javax.annotation.Nullable Entity p_151419_,
+    public Optional<Vec3> findFreePosition(@Nullable Entity p_151419_,
         VoxelShape p_151420_,
         Vec3 p_151421_,
         double p_151422_,
@@ -1663,13 +1687,13 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public Iterable<VoxelShape> getBlockCollisions(@javax.annotation.Nullable Entity p_186435_, AABB p_186436_)
+    public Iterable<VoxelShape> getBlockCollisions(@Nullable Entity p_186435_, AABB p_186436_)
     {
         return super.getBlockCollisions(p_186435_, p_186436_);
     }
 
     @Override
-    public Iterable<VoxelShape> getCollisions(@javax.annotation.Nullable Entity p_186432_, AABB p_186433_)
+    public Iterable<VoxelShape> getCollisions(@Nullable Entity p_186432_, AABB p_186433_)
     {
         return super.getCollisions(p_186432_, p_186433_);
     }
@@ -1699,7 +1723,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public boolean noCollision(@javax.annotation.Nullable Entity p_45757_, AABB p_45758_)
+    public boolean noCollision(@Nullable Entity p_45757_, AABB p_45758_)
     {
         return super.noCollision(p_45757_, p_45758_);
     }
@@ -1759,7 +1783,7 @@ public class FakeLevel<SOURCE extends IFakeLevelBlockGetter> extends Level
     }
 
     @Override
-    public boolean destroyBlock(BlockPos p_46954_, boolean p_46955_, @javax.annotation.Nullable Entity p_46956_)
+    public boolean destroyBlock(BlockPos p_46954_, boolean p_46955_, @Nullable Entity p_46956_)
     {
         return super.destroyBlock(p_46954_, p_46955_, p_46956_);
     }

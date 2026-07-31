@@ -1,6 +1,6 @@
 package com.ldtteam.blockui.mod.item;
 
-import com.ldtteam.blockui.mod.Log;
+import com.google.common.base.Suppliers;
 import com.ldtteam.common.util.BlockToItemHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -10,37 +10,36 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.model.data.ModelData;
-import net.neoforged.neoforge.common.util.Lazy;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Holds blockstate rendering data for UIs. BlockState must match blockEntity
+ * <p>
+ * port-26.2 / contract K5: the NeoForge {@code ModelData} record component is gone, Fabric has no equivalent.
+ * NeoForge's {@code Lazy} is replaced by a memoized {@link Supplier}.
  */
 public record BlockStateRenderingData(BlockState blockState,
     @Nullable BlockEntity blockEntity,
-    ModelData modelData,
     boolean modelNeedsRotationFix,
-    Lazy<ItemStack> playerPickedItemStack)
+    Supplier<ItemStack> playerPickedItemStack)
 {
     public static final BlockPos ILLEGAL_BLOCK_ENTITY_POS = BlockPos.ZERO.below(1000);
 
     private BlockStateRenderingData(final BlockState blockState,
         final BlockEntity blockEntity,
-        final ModelData modelData,
         final boolean modelNeedsRotationFix)
     {
         this(blockState,
             blockEntity,
-            modelData,
             modelNeedsRotationFix,
-            Lazy.of(() -> BlockToItemHelper.getItemStack(blockState, blockEntity, Minecraft.getInstance().player)));
+            Suppliers.memoize(() -> BlockToItemHelper.getItemStack(blockState, blockEntity, Minecraft.getInstance().player)));
     }
 
-    private BlockStateRenderingData(final BlockState blockState, final BlockEntity blockEntity, final ModelData modelData)
+    private BlockStateRenderingData(final BlockState blockState, final BlockEntity blockEntity)
     {
-        this(blockState, blockEntity, modelData, checkModelForYrotation(blockState));
+        this(blockState, blockEntity, checkModelForYrotation(blockState));
     }
 
     /**
@@ -52,11 +51,7 @@ public record BlockStateRenderingData(BlockState blockState,
         final BlockEntity blockEntity = level.getBlockEntity(pos);
         final ItemStack itemStack = BlockToItemHelper.getItemStack(level, pos, player);
 
-        return new BlockStateRenderingData(blockState,
-            blockEntity,
-            getModelData(blockState, blockEntity),
-            checkModelForYrotation(blockState),
-            Lazy.of(() -> itemStack));
+        return new BlockStateRenderingData(blockState, blockEntity, checkModelForYrotation(blockState), () -> itemStack);
     }
 
     /**
@@ -64,7 +59,7 @@ public record BlockStateRenderingData(BlockState blockState,
      */
     public static BlockStateRenderingData of(final BlockState blockState, @Nullable final BlockEntity blockEntity)
     {
-        return blockEntity == null ? of(blockState) : new BlockStateRenderingData(blockState, blockEntity, getModelData(blockState, blockEntity));
+        return blockEntity == null ? of(blockState) : new BlockStateRenderingData(blockState, blockEntity);
     }
 
     /**
@@ -80,35 +75,16 @@ public record BlockStateRenderingData(BlockState blockState,
                 return of(blockState, be);
             }
         }
-        return new BlockStateRenderingData(blockState, null, null);
+        return new BlockStateRenderingData(blockState, null);
     }
 
     /**
-     * Useful when you want to update blockEntity. Keeps modelData in sync
+     * Useful when you want to update blockEntity.
      */
     public BlockStateRenderingData updateBlockEntity(final Function<BlockEntity, BlockEntity> updater)
     {
         final BlockEntity updated = updater.apply(blockEntity);
-        return new BlockStateRenderingData(blockState, updated, getModelData(blockState, updated), modelNeedsRotationFix);
-    }
-
-    public ModelData modelData()
-    {
-        return modelData == null ? ModelData.EMPTY : modelData;
-    }
-
-    private static ModelData getModelData(final BlockState blockState, final BlockEntity blockEntity)
-    {
-        ModelData model = ModelData.EMPTY;
-        try
-        {
-            model = blockEntity.getModelData();
-        }
-        catch (final Exception e)
-        {
-            Log.getLogger().warn("Could not get model data for: " + blockState.toString(), e);
-        }
-        return model;
+        return new BlockStateRenderingData(blockState, updated, modelNeedsRotationFix);
     }
 
     /**

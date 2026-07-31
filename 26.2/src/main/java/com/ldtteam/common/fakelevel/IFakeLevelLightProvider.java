@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndLightGetter;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.lighting.LightEngine;
-import net.neoforged.neoforge.common.ModConfigSpec.IntValue;
+import com.ldtteam.common.config.ConfigValue.IntValue;
 
 /**
  * Loosely based on {@link BlockAndLightGetter}

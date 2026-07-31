@@ -1,14 +1,16 @@
 package com.ldtteam.common.network;
 
 import com.mojang.logging.LogUtils;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
-import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import java.util.function.BiFunction;
@@ -201,47 +203,36 @@ public record PlayMessageType<T extends AbstractUnsidedPlayMessage>(Type<T> id,
     }
 
     /**
-     * Call this in following code:
+     * Call this from your common mod initializer:
      *
      * <pre>
-     * public static void onNetworkRegistry(final RegisterPayloadHandlerEvent event)
+     * public void onInitialize()
      * {
-     *     final String modVersion = ModList.get().getModContainerById(Constants.MOD_ID).get().getModInfo().getVersion().toString();
-     *     final PayloadRegistrar registry = event.registrar(Constants.MOD_ID).versioned(modVersion);
-     *
      *     // MyMessage extends one of AbstractPlayMessage, AbstractClientPlayMessage, AbstractServerPlayMessage
-     *     MyMessage.TYPE.register(registry);
+     *     MyMessage.TYPE.register();
      * }
      * </pre>
      *
-     * @param registry event network registry
+     * Fabric has no payload versioning, so the NeoForge {@code registrar(modId).versioned(modVersion)} wrapper
+     * is gone entirely rather than ported: a payload sent to a client running a different mod version is no
+     * longer rejected by the handshake, it fails while decoding.
      */
-    public void register(final PayloadRegistrar registry)
+    public void register()
     {
-        if (client != null && server != null)
+        if (server != null)
         {
-            registry.playBidirectional(id, codec, this::onBidirectional);
+            PayloadTypeRegistry.serverboundPlay().register(id, codec);
+            ServerPlayNetworking.registerGlobalReceiver(id, (payload, context) -> onServer(payload, new ServerContext(context)));
         }
-        else if (client != null)
+
+        if (client != null)
         {
-            registry.playToClient(id, codec, this::onClient);
-        }
-        else if (server != null)
-        {
-            registry.playToServer(id, codec, this::onServer);
+            PayloadTypeRegistry.clientboundPlay().register(id, codec);
+            ModNetworking.hookClientReceiver(this);
         }
     }
 
-    private void onBidirectional(final T payload, final IPayloadContext context)
-    {
-        switch (context.flow())
-        {
-            case CLIENTBOUND -> onClient(payload, context);
-            case SERVERBOUND -> onServer(payload, context);
-        }
-    }
-
-    private void onClient(final T payload, final IPayloadContext context)
+    void onClient(final T payload, final PlayMessageContext context)
     {
         final Player player = context.player();
         if (!allowNullPlayer && player == null)
@@ -252,7 +243,7 @@ public record PlayMessageType<T extends AbstractUnsidedPlayMessage>(Type<T> id,
         client.handle(payload, context, player);
     }
 
-    private void onServer(final T payload, final IPayloadContext context)
+    void onServer(final T payload, final PlayMessageContext context)
     {
         final ServerPlayer serverPlayer = context.player() instanceof final ServerPlayer sp ? sp : null;
         if ((!allowNullPlayer && serverPlayer == null))
@@ -263,29 +254,58 @@ public record PlayMessageType<T extends AbstractUnsidedPlayMessage>(Type<T> id,
         server.handle(payload, context, serverPlayer);
     }
 
+    /**
+     * Fabric dispatches receivers on the logical side's main thread already, so there is nothing to redirect -
+     * both branches behave like the old {@code executeOnNetworkThread = false} one. The parameter is kept so
+     * existing call sites keep compiling.
+     */
     private static <T extends AbstractUnsidedPlayMessage, U extends Player> PayloadAction<T, U> threadRedirect(
         final PayloadAction<T, U> payloadAction,
         final boolean executeOnNetworkThread)
     {
-        return executeOnNetworkThread ? payloadAction :
-            (payload, context, player) -> context.enqueueWork(() -> payloadAction.handle(payload, context, player));
+        return payloadAction;
     }
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static void wrongPlayerException(final IPayloadContext context, final AbstractUnsidedPlayMessage payload)
+    private static void wrongPlayerException(final PlayMessageContext context, final AbstractUnsidedPlayMessage payload)
     {
         final Player player = context.player();
         LOGGER.warn("Invalid packet received for - " + payload.getClass().getName() +
             " player: " +
             (player == null ? "MISSING" : player.getClass().getName()) +
-            " logical-side: " +
-            context.flow().getReceptionSide());
+            " flow: " +
+            context.flow().id());
     }
+
+    /**
+     * Adapts Fabric's serverbound receiver context to the common one.
+     */
+    private record ServerContext(ServerPlayNetworking.Context wrapped) implements PlayMessageContext
+    {
+        @Override
+        public Player player()
+        {
+            return wrapped.player();
+        }
+
+        @Override
+        public PacketFlow flow()
+        {
+            return PacketFlow.SERVERBOUND;
+        }
+
+        @Override
+        public MinecraftServer server()
+        {
+            return wrapped.server();
+        }
+    }
+
     @FunctionalInterface
     private interface PayloadAction<T, U>
     {
-        void handle(T payload, IPayloadContext context, U player);
+        void handle(T payload, PlayMessageContext context, U player);
     }
 
     /**

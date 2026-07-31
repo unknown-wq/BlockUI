@@ -1,18 +1,25 @@
 package com.ldtteam.common.network;
 
+import com.ldtteam.common.util.ServerLifecycleHooks;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.neoforged.fml.loading.FMLEnvironment;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import java.util.Collection;
 
 /**
  * List of possible network targets when sending from server to client.
+ * <p>
+ * NeoForge's {@code PacketDistributor} has no Fabric counterpart; every target is expressed as
+ * {@code PlayerLookup} + {@code ServerPlayNetworking.send}.
  */
 public interface IClientboundDistributor extends CustomPacketPayload
 {
@@ -29,12 +36,12 @@ public interface IClientboundDistributor extends CustomPacketPayload
 
     public default void sendToPlayer(final ServerPlayer player)
     {
-        PacketDistributor.sendToPlayer(player, this);
+        ServerPlayNetworking.send(player, this);
     }
 
     public default void sendToDimension(final ServerLevel serverLevel)
     {
-        PacketDistributor.sendToPlayersInDimension(serverLevel, this);
+        sendToPlayer(PlayerLookup.level(serverLevel));
     }
 
     public default void sendToTargetPoint(final ServerLevel level,
@@ -44,35 +51,49 @@ public interface IClientboundDistributor extends CustomPacketPayload
         final double z,
         final double radius)
     {
-        PacketDistributor.sendToPlayersNear(level, excluded, x, y, z, radius, this);
+        for (final ServerPlayer serverPlayer : PlayerLookup.around(level, new Vec3(x, y, z), radius))
+        {
+            if (serverPlayer != excluded)
+            {
+                sendToPlayer(serverPlayer);
+            }
+        }
     }
 
     public default void sendToAllClients()
     {
-        PacketDistributor.sendToAllPlayers(this);
+        final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server != null)
+        {
+            sendToPlayer(PlayerLookup.all(server));
+        }
     }
 
     public default void sendToTrackingEntity(final Entity entity)
     {
-        PacketDistributor.sendToPlayersTrackingEntity(entity, this);
+        sendToPlayer(PlayerLookup.tracking(entity));
     }
 
     public default void sendToTrackingEntityAndSelf(final Entity entity)
     {
-        PacketDistributor.sendToPlayersTrackingEntityAndSelf(entity, this);
+        sendToTrackingEntity(entity);
+        if (entity instanceof final ServerPlayer serverPlayer)
+        {
+            sendToPlayer(serverPlayer);
+        }
     }
 
     public default void sendToPlayersTrackingChunk(final LevelChunk chunk)
     {
         if (chunk.getLevel() instanceof final ServerLevel level)
         {
-            PacketDistributor.sendToPlayersTrackingChunk(level, chunk.getPos(), this);
+            sendToPlayersTrackingChunk(level, chunk.getPos());
             return;
         }
 
         final String crash =
             "Got client chunk for server network message: " + this.getClass().getName() + " - " + chunk.getClass().getName();
-        if (FMLEnvironment.isProduction())
+        if (!FabricLoader.getInstance().isDevelopmentEnvironment())
         {
             new IllegalArgumentException(crash).printStackTrace();
         }
@@ -84,6 +105,6 @@ public interface IClientboundDistributor extends CustomPacketPayload
 
     public default void sendToPlayersTrackingChunk(final ServerLevel serverLevel, final ChunkPos chunkPos)
     {
-        PacketDistributor.sendToPlayersTrackingChunk(serverLevel, chunkPos, this);
+        sendToPlayer(PlayerLookup.tracking(serverLevel, chunkPos));
     }
 }

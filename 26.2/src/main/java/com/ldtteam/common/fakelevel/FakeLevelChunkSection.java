@@ -2,6 +2,7 @@ package com.ldtteam.common.fakelevel;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
@@ -37,7 +38,7 @@ public class FakeLevelChunkSection extends LevelChunkSection
 
     private BlockPos formGlobalPos(int x, int y, int z)
     {
-        return new BlockPos(x + chunkPos.x() * SECTION_WIDTH, y + yIdx * SECTION_HEIGHT, z  + chunkPos.z() * SECTION_WIDTH);
+        return new BlockPos(x + chunkPos.x() * SectionPos.SECTION_SIZE, y + yIdx * SectionPos.SECTION_SIZE, z + chunkPos.z() * SectionPos.SECTION_SIZE);
     }
 
     @Override
@@ -62,7 +63,7 @@ public class FakeLevelChunkSection extends LevelChunkSection
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z)
     {
-        return fakeLevel.getNoiseBiome(chunkPos.x(), yIdx * SECTION_HEIGHT, chunkPos.z());
+        return fakeLevel.getNoiseBiome(chunkPos.x(), yIdx * SectionPos.SECTION_SIZE, chunkPos.z());
     }
 
     @Override

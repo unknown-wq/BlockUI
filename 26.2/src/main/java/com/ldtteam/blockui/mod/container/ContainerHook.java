@@ -24,6 +24,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.entity.BlockEntityTypes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -69,7 +70,7 @@ public class ContainerHook
                 .getBlockEntity(thing.getBlockPos());
 
             final Container container = worldBlockEntity instanceof Container c ? c :
-                (worldBlockEntity.getType() == BlockEntityType.ENDER_CHEST ? integratedServer.getPlayerList()
+                (worldBlockEntity.getType() == BlockEntityTypes.ENDER_CHEST ? integratedServer.getPlayerList()
                     .getPlayer(integratedServer.getSingleplayerProfile().id())
                     .getEnderChestInventory() : null);
 

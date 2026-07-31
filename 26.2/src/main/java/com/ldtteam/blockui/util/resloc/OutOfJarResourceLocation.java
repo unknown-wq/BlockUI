@@ -152,6 +152,11 @@ public class OutOfJarResourceLocation extends Identifier
         return of(getNamespace(), nioPath.resolveSibling(nioPath.getFileName().toString() + suffix));
     }
 
+    // 26.2: Identifier#compareNamespaced(Identifier) no longer exists - the only ordering left on Identifier is
+    // compareTo(Identifier) (/opt/mc-src/net/minecraft/resources/Identifier.java:143). Nothing in BlockUI called
+    // the namespace-first variant, so the override is dropped rather than reimplemented.
+    // TODO(port-26.2): DISABLED - Identifier#compareNamespaced removed upstream, no caller in this mod.
+    /*
     @Override
     public int compareNamespaced(final Identifier o)
     {
@@ -162,6 +167,7 @@ public class OutOfJarResourceLocation extends Identifier
         }
         return super.compareNamespaced(o);
     }
+    */
 
     @Override
     public int compareTo(final Identifier o)

@@ -2,10 +2,12 @@ package com.ldtteam.blockui;
 
 import com.ldtteam.blockui.mod.BlockUI;
 import com.ldtteam.blockui.util.color.IColour;
+import com.mojang.blaze3d.PrimitiveTopology;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.blaze3d.vertex.VertexFormat.Mode;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.render.TextureSetup;
@@ -19,7 +21,6 @@ import net.minecraft.client.resources.metadata.gui.GuiSpriteScaling.Tile;
 import net.minecraft.client.resources.metadata.gui.GuiSpriteScaling.Type;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
-import net.neoforged.fml.loading.FMLEnvironment;
 import org.joml.Matrix3x2f;
 import org.jspecify.annotations.Nullable;
 import java.util.Objects;
@@ -31,31 +32,39 @@ import java.util.function.BiConsumer;
 public class UiRenderMacros
 {
     public static final double HALF_BIAS = 0.5;
+    // 26.2: RenderPipeline.Builder#withVertexFormat(VertexFormat, VertexFormat.Mode) is gone, the two halves are now
+    // separate calls: withVertexBinding(bindingIndex, VertexFormat) + withPrimitiveTopology(PrimitiveTopology).
+    // Confirmed: /opt/mc-src/com/mojang/blaze3d/pipeline/RenderPipeline.java:265,270 and
+    // /opt/mc-src/net/minecraft/client/renderer/RenderPipelines.java:208-227 (the vanilla GUI snippets do the same).
     /** alpha/blending enabled by default */
     public static final RenderPipeline GUI_POS_COLOR_TRIANGLES = RenderPipeline.builder(RenderPipelines.GUI_SNIPPET)
         .withLocation(BlockUI.resLoc("gui_pos_color_triangles"))
         .withVertexShader("core/position_color")
         .withFragmentShader("core/position_color")
-        .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, Mode.TRIANGLES)
+        .withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+        .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
         .build();
     /** alpha/blending enabled by default */
     public static final RenderPipeline GUI_POS_TEX_TRIANGLES = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
         .withLocation(BlockUI.resLoc("gui_pos_tex_triangles"))
         .withVertexShader("core/position_tex")
         .withFragmentShader("core/position_tex")
-        .withVertexFormat(DefaultVertexFormat.POSITION_TEX, Mode.TRIANGLES)
+        .withVertexBinding(0, DefaultVertexFormat.POSITION_TEX)
+        .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
         .build();
     /** alpha/blending enabled by default */
     public static final RenderPipeline GUI_POS_TEX_COLOR_TRIANGLES = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
         .withLocation(BlockUI.resLoc("gui_pos_tex_color_triangles"))
         .withVertexShader("core/position_tex_color")
         .withFragmentShader("core/position_tex_color")
-        .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, Mode.TRIANGLES)
+        .withVertexBinding(0, DefaultVertexFormat.POSITION_TEX_COLOR)
+        .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
         .build();
     /** alpha/blending enabled by default */
     public static final RenderPipeline GUI_POS_COLOR_LINES = RenderPipeline.builder(RenderPipelines.GUI_SNIPPET)
         .withLocation(BlockUI.resLoc("gui_pos_color_lines"))
-        .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, Mode.DEBUG_LINES)
+        .withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+        .withPrimitiveTopology(PrimitiveTopology.DEBUG_LINES)
         .build();
 
     public static void drawLineRectGradient(final GuiGraphicsExtractor ps,
@@ -742,7 +751,7 @@ public class UiRenderMacros
             final NineSlice nineSlice = new NineSlice(tile.width(), tile.height(), new NineSlice.Border(0, 0, 0, 0), false);
             return (ps, x, y, w, h, c) -> blitRepeatable(ps, atlasLocation, x, y, w, h, u0, v0, u1, v1, nineSlice, c);
         }
-        if (!FMLEnvironment.isProduction())
+        if (FabricLoader.getInstance().isDevelopmentEnvironment())
         {
             throw new UnsupportedOperationException("Missing resolver for gui scaling: " + guiScaling.type());
         }
@@ -803,7 +812,7 @@ public class UiRenderMacros
             y,
             w,
             h,
-            (pose, bounds, scissors) -> target.submitGuiElementRenderState(
+            (pose, bounds, scissors) -> target.guiRenderState.addGuiElement(
                 new UiRenderMacrosGuiElementRenderState(pose, task, pipeline, TextureSetup.noTexture(), bounds, scissors)));
     }
 
@@ -817,9 +826,9 @@ public class UiRenderMacros
         final BiConsumer<Matrix3x2f, VertexConsumer> task)
     {
         innerSubmit(target, x, y, w, h, (pose, bounds, scissors) -> {
-            final AbstractTexture texture = target.minecraft.getTextureManager().getTexture(texResLoc);
+            final AbstractTexture texture = Minecraft.getInstance().getTextureManager().getTexture(texResLoc);
             final TextureSetup textureSetup = TextureSetup.singleTexture(texture.getTextureView(), texture.getSampler());
-            target.submitGuiElementRenderState(
+            target.guiRenderState.addGuiElement(
                 new UiRenderMacrosGuiElementRenderState(pose, task, pipeline, textureSetup, bounds, scissors));
         });
     }
@@ -832,7 +841,9 @@ public class UiRenderMacros
         final SubmitTask task)
     {
         final Matrix3x2f pose = new Matrix3x2f(target.pose());
-        final ScreenRectangle scissors = target.peekScissorStack();
+        // 26.2: GuiGraphicsExtractor#peekScissorStack() is gone, the stack itself is public
+        // (/opt/mc-src/net/minecraft/client/gui/GuiGraphicsExtractor.java:98, 1416)
+        final ScreenRectangle scissors = target.scissorStack.peek();
 
         ScreenRectangle bounds = new ScreenRectangle(x, y, w, h);
         bounds = bounds.transformMaxBounds(pose);

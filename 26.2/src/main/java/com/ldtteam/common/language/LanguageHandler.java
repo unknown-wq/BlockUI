@@ -2,8 +2,8 @@ package com.ldtteam.common.language;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.ldtteam.blockui.mod.BlockUI;
 import net.minecraft.locale.Language;
-import net.neoforged.fml.loading.FMLEnvironment;
 import org.apache.commons.io.IOUtils;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -64,7 +64,8 @@ public final class LanguageHandler
 
         private void load(final String path)
         {
-            final String locale = FMLEnvironment.getDist().isClient() ? ClientLocale.getLocale() : ServerLocale.getLocale();
+            // contract K6: FMLEnvironment.getDist().isClient() -> BlockUI.isClient()
+            final String locale = BlockUI.isClient() ? ClientLocale.getLocale() : ServerLocale.getLocale();
 
             InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(String.format(path, locale));
             if (is == null)

@@ -19,15 +19,15 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Item.TooltipContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.block.AirBlock;
-import net.neoforged.neoforge.client.ClientTooltipFlag;
-import net.neoforged.neoforge.common.CreativeModeTabRegistry;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.joml.Matrix3x2fStack;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -258,7 +258,9 @@ public class ItemIcon extends Pane
             tooltipFlags = tooltipFlags.asCreative();
         }
 
-        final List<Component> tooltipList = itemStack.getTooltipLines(TooltipContext.of(mc.level, mc.player), mc.player, ClientTooltipFlag.of(tooltipFlags));
+        // 26.2/Fabric: no ClientTooltipFlag and no player-aware TooltipContext.of overload, both are NeoForge additions
+        final List<Component> tooltipList =
+            new ArrayList<>(itemStack.getTooltipLines(TooltipContext.of(mc.level), mc.player, tooltipFlags));
         int nameOffset = 1;
 
         nameOffset = modifyTooltipName(tooltipList, tooltipFlags, nameOffset);
@@ -276,7 +278,7 @@ public class ItemIcon extends Pane
             // add creative tabs
             int i = nameOffset + 1;
             final ItemStack defaultStack = itemStack.getItem().getDefaultInstance();
-            for (final CreativeModeTab tab : CreativeModeTabRegistry.getSortedCreativeModeTabs())
+            for (final CreativeModeTab tab : CreativeModeTabs.tabs())
             {
                 if (tab.contains(defaultStack))
                 {

@@ -12,7 +12,7 @@ accessible	field	net/minecraft/world/entity/LivingEntity	dead	Z
 # style full ctor                                Style.java:57 (private Style(...))
 accessible	method	net/minecraft/network/chat/Style	<init>	(Lnet/minecraft/network/chat/TextColor;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Lnet/minecraft/network/chat/ClickEvent;Lnet/minecraft/network/chat/HoverEvent;Ljava/lang/String;Lnet/minecraft/network/chat/FontDescription;)V
 
-# gui graphics overload                          GuiGraphicsExtractor.java:113 / :93 / :103
+# gui graphics overload                          GuiGraphicsExtractor.java:113 / :93 / :104
 accessible	method	net/minecraft/client/gui/GuiGraphicsExtractor	<init>	(Lnet/minecraft/client/Minecraft;Lorg/joml/Matrix3x2fStack;Lnet/minecraft/client/renderer/state/gui/GuiRenderState;II)V
 accessible	field	net/minecraft/client/gui/GuiGraphicsExtractor	minecraft	Lnet/minecraft/client/Minecraft;
 # already public through fabric-transitive-access-wideners-v1; kept so the mod does not depend on it
@@ -39,7 +39,7 @@ extendable	class	net/minecraft/resources/Identifier
 accessible	method	net/minecraft/resources/Identifier	<init>	(Ljava/lang/String;Ljava/lang/String;)V
 
 # tooltip — AT wildcards `TooltipRenderUtil *` and `*()` expanded by hand.
-# TooltipRenderUtil.java: :12 :13 (private sprites), :15 :19 (private ints), :33 :37 (private methods).
+# TooltipRenderUtil.java: :12 :13 (private sprites), :15 :20 (private ints), :33 :37 (private methods).
 # MOUSE_OFFSET, PADDING_LEFT/RIGHT/TOP/BOTTOM and extractTooltipBackground are already public.
 accessible	field	net/minecraft/client/gui/screens/inventory/tooltip/TooltipRenderUtil	BACKGROUND_SPRITE	Lnet/minecraft/resources/Identifier;
 accessible	field	net/minecraft/client/gui/screens/inventory/tooltip/TooltipRenderUtil	FRAME_SPRITE	Lnet/minecraft/resources/Identifier;

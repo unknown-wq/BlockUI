@@ -8,7 +8,7 @@ import com.mojang.serialization.DataResult;
 import com.mojang.serialization.JavaOps;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.xml.sax.InputSource;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
@@ -16,8 +16,8 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class XmlOpsTest
 {
@@ -62,14 +62,14 @@ public class XmlOpsTest
             List.of(100, 250, 42, 999));
 
         final DataResult<XmlValue> encoded = Player.CODEC.encodeStart(XmlOps.INSTANCE, player);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final XmlValue xml = encoded.getOrThrow(AssertionError::new);
         System.out.println("=== roundtripComplexNestedRecord ===");
         System.out.println(XmlOps.toXmlString(xml).getOrThrow(AssertionError::new));
 
         final DataResult<Player> decoded = Player.CODEC.parse(XmlOps.INSTANCE, xml);
-        assertTrue("Decoding failed: " + decoded.error(), decoded.isSuccess());
+        assertTrue(decoded.isSuccess(), "Decoding failed: " + decoded.error());
 
         assertEquals(player, decoded.getOrThrow(AssertionError::new));
     }
@@ -124,7 +124,7 @@ public class XmlOpsTest
         final Codec<List<Shape>> codec = Shape.CODEC.listOf();
 
         final DataResult<XmlValue> encoded = codec.encodeStart(XmlOps.INSTANCE, shapes);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
         System.out.println("=== roundtripDispatchCodec ===");
         System.out.println(XmlOps.toXmlString(encoded.getOrThrow(AssertionError::new)).getOrThrow(AssertionError::new));
 
@@ -162,7 +162,7 @@ public class XmlOpsTest
         final Map<String, Item> data = Map.of("slot1", new Item("diamond", 64, 1.0f), "slot2", new Item("iron", 32, 2.5f));
 
         final DataResult<XmlValue> encoded = codec.encodeStart(XmlOps.INSTANCE, data);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
         System.out.println("=== roundtripUnboundedMapComplex ===");
         System.out.println(XmlOps.toXmlString(encoded.getOrThrow(AssertionError::new)).getOrThrow(AssertionError::new));
 
@@ -189,7 +189,7 @@ public class XmlOpsTest
         final Config config = new Config("localhost", 8080, Optional.of("secret"), List.of(1000L, 2000L, 3000L));
 
         final DataResult<XmlValue> encoded = Config.CODEC.encodeStart(XmlOps.INSTANCE, config);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final DataResult<Config> decoded = encoded.flatMap(r -> Config.CODEC.parse(XmlOps.INSTANCE, r));
         assertEquals(DataResult.success(config), decoded);
@@ -201,7 +201,7 @@ public class XmlOpsTest
         final Config config = new Config("example.com", 443, Optional.empty(), List.of(999L));
 
         final DataResult<XmlValue> encoded = Config.CODEC.encodeStart(XmlOps.INSTANCE, config);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final DataResult<Config> decoded = encoded.flatMap(r -> Config.CODEC.parse(XmlOps.INSTANCE, r));
         assertEquals(DataResult.success(config), decoded);
@@ -216,10 +216,10 @@ public class XmlOpsTest
         final Codec<ByteBuffer> codec = Codec.BYTE_BUFFER;
 
         final DataResult<XmlValue> encoded = codec.encodeStart(XmlOps.INSTANCE, ByteBuffer.wrap(data));
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final DataResult<ByteBuffer> decoded = encoded.flatMap(r -> codec.parse(XmlOps.INSTANCE, r));
-        assertTrue("Decoding failed: " + decoded.error(), decoded.isSuccess());
+        assertTrue(decoded.isSuccess(), "Decoding failed: " + decoded.error());
 
         final byte[] result = new byte[decoded.getOrThrow(AssertionError::new).remaining()];
         decoded.getOrThrow(AssertionError::new).get(result);
@@ -245,10 +245,10 @@ public class XmlOpsTest
         final DataResult<Player> decoded = encoded.flatMap(r -> Player.CODEC.parse(XmlOps.INSTANCE, r));
         final DataResult<XmlValue> reEncoded = decoded.flatMap(r -> Player.CODEC.encodeStart(XmlOps.INSTANCE, r));
 
-        assertEquals("read(write(x)) == x", DataResult.success(data), decoded);
+        assertEquals(DataResult.success(data), decoded, "read(write(x)) == x");
         // Re-encode and decode again to verify stability
         final DataResult<Player> reDecoded = reEncoded.flatMap(r -> Player.CODEC.parse(XmlOps.INSTANCE, r));
-        assertEquals("read(write(read(write(x)))) == x", DataResult.success(data), reDecoded);
+        assertEquals(DataResult.success(data), reDecoded, "read(write(read(write(x)))) == x");
     }
 
     // ===== "type" key becomes element tag name =====
@@ -273,7 +273,7 @@ public class XmlOpsTest
         System.out.println(XmlOps.toXmlString(xml).getOrThrow(AssertionError::new));
 
         // Verify the tag name IS "Dragon", not "object"
-        assertTrue("Expected XmlElement", xml instanceof XmlElement);
+        assertTrue(xml instanceof XmlElement, "Expected XmlElement");
         assertEquals("Dragon", ((XmlElement) xml).tag());
         assertEquals("Smaug", ((XmlElement) xml).getAttribute("name"));
         assertEquals("99", ((XmlElement) xml).getAttribute("level"));
@@ -296,7 +296,7 @@ public class XmlOpsTest
         System.out.println(XmlOps.toXmlString(xml).getOrThrow(AssertionError::new));
 
         // Root should be a list element
-        assertTrue("Expected XmlElement", xml instanceof XmlElement);
+        assertTrue(xml instanceof XmlElement, "Expected XmlElement");
         assertEquals("list", ((XmlElement) xml).tag());
 
         final List<Entity> decoded = codec.parse(XmlOps.INSTANCE, xml).getOrThrow(AssertionError::new);
@@ -448,14 +448,14 @@ public class XmlOpsTest
             List.of(1, 2, 3));
 
         final DataResult<XmlValue> encoded = Z.CODEC.encodeStart(XmlOps.INSTANCE, tree);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final XmlValue xml = encoded.getOrThrow(AssertionError::new);
         System.out.println("=== recursivePolymorphicTree ===");
         System.out.println(XmlOps.toXmlString(xml).getOrThrow(AssertionError::new));
 
         final DataResult<Z> decoded = Z.CODEC.parse(XmlOps.INSTANCE, xml);
-        assertTrue("Decoding failed: " + decoded.error(), decoded.isSuccess());
+        assertTrue(decoded.isSuccess(), "Decoding failed: " + decoded.error());
         assertEquals(tree, decoded.getOrThrow(AssertionError::new));
     }
 
@@ -469,14 +469,14 @@ public class XmlOpsTest
         final Codec<List<Z>> codec = Z.CODEC.listOf();
 
         final DataResult<XmlValue> encoded = codec.encodeStart(XmlOps.INSTANCE, nodes);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final XmlValue xml = encoded.getOrThrow(AssertionError::new);
         System.out.println("=== recursivePolymorphicList ===");
         System.out.println(XmlOps.toXmlString(xml).getOrThrow(AssertionError::new));
 
         final DataResult<List<Z>> decoded = codec.parse(XmlOps.INSTANCE, xml);
-        assertTrue("Decoding failed: " + decoded.error(), decoded.isSuccess());
+        assertTrue(decoded.isSuccess(), "Decoding failed: " + decoded.error());
         assertEquals(nodes, decoded.getOrThrow(AssertionError::new));
     }
 
@@ -495,7 +495,7 @@ public class XmlOpsTest
         final TextHolder holder = new TextHolder("hello world", 42);
 
         final DataResult<XmlValue> encoded = TextHolder.CODEC.encodeStart(XmlOps.INSTANCE, holder);
-        assertTrue("Encoding failed: " + encoded.error(), encoded.isSuccess());
+        assertTrue(encoded.isSuccess(), "Encoding failed: " + encoded.error());
 
         final XmlValue xml = encoded.getOrThrow(AssertionError::new);
         System.out.println("=== roundtripTextKey ===");
@@ -508,7 +508,7 @@ public class XmlOpsTest
         assertEquals("42", elem.getAttribute("score"));
 
         final DataResult<TextHolder> decoded = TextHolder.CODEC.parse(XmlOps.INSTANCE, xml);
-        assertTrue("Decoding failed: " + decoded.error(), decoded.isSuccess());
+        assertTrue(decoded.isSuccess(), "Decoding failed: " + decoded.error());
         assertEquals(holder, decoded.getOrThrow(AssertionError::new));
     }
 

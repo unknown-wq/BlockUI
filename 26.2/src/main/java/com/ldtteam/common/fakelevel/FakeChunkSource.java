@@ -4,7 +4,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkSource;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.lighting.LevelLightEngine;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 import java.util.function.BooleanSupplier;
 
 /**

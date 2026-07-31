@@ -1,28 +1,36 @@
 package com.ldtteam.common.config;
 
+import com.ldtteam.common.config.ConfigValue.BooleanValue;
+import com.ldtteam.common.config.ConfigValue.Builder;
+import com.ldtteam.common.config.ConfigValue.DoubleValue;
+import com.ldtteam.common.config.ConfigValue.EnumValue;
+import com.ldtteam.common.config.ConfigValue.IntValue;
+import com.ldtteam.common.config.ConfigValue.LongValue;
+import com.ldtteam.common.config.ConfigValue.RestartType;
 import com.ldtteam.common.language.LanguageHandler;
-import net.minecraft.server.TickTask;
-import net.neoforged.fml.loading.FMLEnvironment;
-import net.neoforged.neoforge.common.ModConfigSpec.BooleanValue;
-import net.neoforged.neoforge.common.ModConfigSpec.Builder;
-import net.neoforged.neoforge.common.ModConfigSpec.ConfigValue;
-import net.neoforged.neoforge.common.ModConfigSpec.DoubleValue;
-import net.neoforged.neoforge.common.ModConfigSpec.EnumValue;
-import net.neoforged.neoforge.common.ModConfigSpec.IntValue;
-import net.neoforged.neoforge.common.ModConfigSpec.LongValue;
-import net.neoforged.neoforge.common.ModConfigSpec.RestartType;
-import net.neoforged.neoforge.internal.NeoForgeProxy;
-import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+/**
+ * Root of a mod's configuration tree.
+ * <p>
+ * <b>Port contract K4 (a §10 cut).</b> The NeoForge {@code ModConfigSpec} builder this class used to wrap has
+ * no Fabric or vanilla counterpart, so every {@code defineXxx} now simply mints an in-memory
+ * {@link ConfigValue} holding the old TOML default. All the {@code defineXxx} / {@code addWatcher} signatures
+ * and the {@code XXX.get()} call sites are unchanged; what is lost is persistence, per-world server configs,
+ * client/server synchronisation, range/element validation on load and the generated config screen.
+ *
+ * @see ConfigValue
+ */
 public abstract class AbstractConfiguration
 {
     public static final String DEFAULT_KEY_PREFIX = "blockui.config.default.";
@@ -31,6 +39,8 @@ public abstract class AbstractConfiguration
     final List<ConfigWatcher<?>> watchers = new ArrayList<>();
     private final Builder builder;
     private final String modId;
+
+    private final Deque<String> categories = new ArrayDeque<>();
 
     private RestartType nextRestartType = RestartType.NONE;
 
@@ -46,7 +56,7 @@ public abstract class AbstractConfiguration
         {
             throw new IllegalStateException("Categories cannot have worldRestart flag!");
         }
-        buildBase(key, null).push(key);
+        categories.addLast(key);
     }
 
     protected void swapToCategory(final String key)
@@ -57,7 +67,12 @@ public abstract class AbstractConfiguration
 
     protected void finishCategory()
     {
-        builder.pop();
+        categories.pollLast();
+    }
+
+    private String path(final String key)
+    {
+        return categories.isEmpty() ? key : String.join(".", categories) + "." + key;
     }
 
     private String nameTKey(final String key)
@@ -71,16 +86,13 @@ public abstract class AbstractConfiguration
     }
 
     /**
-     * Everything must call this class in the end
+     * Everything must call this in the end - it consumes the pending restart flag and mints the value.
      */
-    private Builder buildBase(final String key, @Nullable final String defaultDesc)
+    private <T, C extends ConfigValue<T>> C build(final String key,
+        @Nullable final String defaultDesc,
+        final ValueFactory<T, C> factory)
     {
-        switch (nextRestartType)
-        {
-            case WORLD -> builder.worldRestart();
-            case GAME -> builder.gameRestart();
-            default -> {}
-        }
+        // there is no config file any more, so the restart type is only consumed, never acted upon
         nextRestartType = RestartType.NONE;
 
         String comment = translate(commentTKey(key));
@@ -89,7 +101,7 @@ public abstract class AbstractConfiguration
             comment += " " + defaultDesc;
         }
 
-        return builder.comment(comment).translation(nameTKey(key));
+        return factory.create(path(key), nameTKey(key), comment);
     }
 
     private static String translate(final String key, final Object... args)
@@ -116,7 +128,9 @@ public abstract class AbstractConfiguration
 
     protected BooleanValue defineBoolean(final String key, final boolean defaultValue)
     {
-        return buildBase(key, translate(DEFAULT_KEY_PREFIX + "boolean", defaultValue)).define(key, defaultValue);
+        return build(key,
+            translate(DEFAULT_KEY_PREFIX + "boolean", defaultValue),
+            (p, t, c) -> new BooleanValue(p, t, c, defaultValue));
     }
 
     protected IntValue defineInteger(final String key, final int defaultValue)
@@ -126,13 +140,16 @@ public abstract class AbstractConfiguration
 
     protected IntValue defineInteger(final String key, final int defaultValue, final int min, final int max)
     {
-        return buildBase(key, translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max))
-            .defineInRange(key, defaultValue, min, max);
+        return build(key,
+            translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
+            (p, t, c) -> new IntValue(p, t, c, defaultValue, min, max));
     }
 
     protected ConfigValue<String> defineString(final String key, final String defaultValue)
     {
-        return buildBase(key, translate(DEFAULT_KEY_PREFIX + "string", defaultValue)).define(key, defaultValue);
+        return this.<String, ConfigValue<String>>build(key,
+            translate(DEFAULT_KEY_PREFIX + "string", defaultValue),
+            (p, t, c) -> new ConfigValue<>(p, t, c, defaultValue));
     }
 
     protected LongValue defineLong(final String key, final long defaultValue)
@@ -142,8 +159,9 @@ public abstract class AbstractConfiguration
 
     protected LongValue defineLong(final String key, final long defaultValue, final long min, final long max)
     {
-        return buildBase(key, translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max))
-            .defineInRange(key, defaultValue, min, max);
+        return build(key,
+            translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
+            (p, t, c) -> new LongValue(p, t, c, defaultValue, min, max));
     }
 
     protected DoubleValue defineDouble(final String key, final double defaultValue)
@@ -153,8 +171,9 @@ public abstract class AbstractConfiguration
 
     protected DoubleValue defineDouble(final String key, final double defaultValue, final double min, final double max)
     {
-        return buildBase(key, translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max))
-            .defineInRange(key, defaultValue, min, max);
+        return build(key,
+            translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
+            (p, t, c) -> new DoubleValue(p, t, c, defaultValue, min, max));
     }
 
     /**
@@ -166,7 +185,7 @@ public abstract class AbstractConfiguration
         final List<? extends T> defaultValue,
         final Predicate<Object> elementValidator)
     {
-        return buildBase(key, null).defineList(key, defaultValue, elementValidator);
+        return defineListInternal(key, defaultValue);
     }
 
     protected <T> ConfigValue<List<? extends T>> defineList(final String key,
@@ -174,7 +193,7 @@ public abstract class AbstractConfiguration
         final Predicate<Object> elementValidator,
         final List<? extends T> defaultValue)
     {
-        return buildBase(key, null).defineList(key, defaultValue, newUiInstance, elementValidator);
+        return defineListInternal(key, defaultValue);
     }
 
     @SuppressWarnings("unchecked")
@@ -183,7 +202,7 @@ public abstract class AbstractConfiguration
         final Predicate<Object> elementValidator,
         final T... values)
     {
-        return buildBase(key, null).defineList(key, () -> List.of(values), newUiInstance, elementValidator);
+        return defineListInternal(key, List.of(values));
     }
 
     /**
@@ -195,7 +214,7 @@ public abstract class AbstractConfiguration
         final List<? extends T> defaultValue,
         final Predicate<Object> elementValidator)
     {
-        return buildBase(key, null).defineListAllowEmpty(key, defaultValue, elementValidator);
+        return defineListInternal(key, defaultValue);
     }
 
     protected <T> ConfigValue<List<? extends T>> defineListAllowEmpty(final String key,
@@ -203,7 +222,7 @@ public abstract class AbstractConfiguration
         final Predicate<Object> elementValidator,
         final List<? extends T> defaultValue)
     {
-        return buildBase(key, null).defineListAllowEmpty(key, defaultValue, newUiInstance, elementValidator);
+        return defineListInternal(key, defaultValue);
     }
 
     @SuppressWarnings("unchecked")
@@ -212,16 +231,23 @@ public abstract class AbstractConfiguration
         final Predicate<Object> elementValidator,
         final T... values)
     {
-        return buildBase(key, null).defineListAllowEmpty(key, () -> List.of(values), newUiInstance, elementValidator);
+        return defineListInternal(key, List.of(values));
+    }
+
+    private <T> ConfigValue<List<? extends T>> defineListInternal(final String key, final List<? extends T> defaultValue)
+    {
+        return this.<List<? extends T>, ConfigValue<List<? extends T>>>build(key,
+            null,
+            (p, t, c) -> new ConfigValue<>(p, t, c, defaultValue));
     }
 
     protected <V extends Enum<V>> EnumValue<V> defineEnum(final String key, final V defaultValue)
     {
-        return buildBase(key,
+        return build(key,
             translate(DEFAULT_KEY_PREFIX + "enum",
                 defaultValue,
-                Arrays.stream(defaultValue.getDeclaringClass().getEnumConstants()).map(Enum::name).collect(Collectors.joining(", "))))
-            .defineEnum(key, defaultValue);
+                Arrays.stream(defaultValue.getDeclaringClass().getEnumConstants()).map(Enum::name).collect(Collectors.joining(", "))),
+            (p, t, c) -> new EnumValue<>(p, t, c, defaultValue));
     }
 
     protected <T> void addWatcher(final ConfigValue<T> configValue, final ConfigListener<T> listener)
@@ -237,6 +263,12 @@ public abstract class AbstractConfiguration
         {
             watchers.add(new ConfigWatcher<>(typedListener, (ConfigValue<Object>) c));
         }
+    }
+
+    @FunctionalInterface
+    private interface ValueFactory<T, C extends ConfigValue<T>>
+    {
+        C create(String path, String translationKey, @Nullable String comment);
     }
 
     @FunctionalInterface
@@ -282,15 +314,10 @@ public abstract class AbstractConfiguration
 
             if (!Objects.equals(newValue, lastValue))
             {
-                final Runnable changeEvent = () -> listener.onChange(lastValue, newValue);
-                if (FMLEnvironment.getDist().isClient())
-                {
-                    NeoForgeProxy.INSTANCE.getClientExecutor().schedule(changeEvent);
-                }
-                else
-                {
-                    ServerLifecycleHooks.getCurrentServer().schedule(new TickTask(0, changeEvent));
-                }
+                // §10: NeoForge posted this onto the client executor / server tick queue because config
+                // reloads arrived off-thread. Without a config file the only source of a change is an explicit
+                // Configurations#set from game code, which already runs on the right thread.
+                listener.onChange(lastValue, newValue);
                 lastValue = newValue;
             }
         }

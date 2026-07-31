@@ -22,7 +22,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.phys.HitResult;
-import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,14 +58,17 @@ public class BlockToItemHelper
     }
 
     /**
-     * Mostly for use by machines/entities when you dont have player instance - uses fake player.
+     * Mostly for use by machines/entities when you dont have player instance.
+     * <p>
+     * Port note: NeoForge's {@code FakePlayerFactory} has no Fabric counterpart, but none is needed - in 26.2
+     * {@code BlockState#getCloneItemStack} no longer takes a player at all, so null is passed instead.
      *
      * @return result of player middle-mouse-button click with more sensible defaults (liquids -> buckets, fire -> flint and steel), might
      *         be {@link ItemStack#isEmpty()} in case of error
      */
     public static ItemStack getItemStack(final ServerLevel serverLevel, final BlockPos pos)
     {
-        return getItemStack(serverLevel, pos, FakePlayerFactory.getMinecraft(serverLevel));
+        return getItemStackUsingPlayerPick(serverLevel, pos, null, null);
     }
 
     /**
@@ -86,10 +88,16 @@ public class BlockToItemHelper
      * @deprecated because vanilla removed {@link HitResult} from method signature
      */
     @Deprecated(since = "26.1")
-    public static ItemStack getItemStackUsingPlayerPick(final Level level, final BlockPos pos, final Player player, @Nullable HitResult hitResult)
+    public static ItemStack getItemStackUsingPlayerPick(final Level level,
+        final BlockPos pos,
+        @Nullable final Player player,
+        @Nullable HitResult hitResult)
     {
         final BlockState blockState = level.getBlockState(pos);
-        ItemStack result = blockState.getCloneItemStack(pos, level, true, player);
+        // 26.2: BlockStateBase#getCloneItemStack(LevelReader, BlockPos, boolean) - the player argument the
+        // NeoForge overload took is gone and the level/pos order swapped
+        // (/opt/mc-src/net/minecraft/world/level/block/state/BlockBehaviour.java:894)
+        ItemStack result = blockState.getCloneItemStack(level, pos, true);
 
         if (result.isEmpty())
         {
@@ -106,9 +114,11 @@ public class BlockToItemHelper
     public static Item getItem(final BlockState blockState)
     {
         final Block block = blockState.getBlock();
-        if (block instanceof final LiquidBlock liquid)
+        if (block instanceof LiquidBlock)
         {
-            return liquid.fluid.getBucket();
+            // 26.2: LiquidBlock#fluid is protected (it was public through the NeoForge patches), so the fluid
+            // is read off the state instead - FluidState#getType (/opt/mc-src/.../material/FluidState.java:33)
+            return blockState.getFluidState().getType().getBucket();
         }
         else if (block instanceof BubbleColumnBlock)
         {

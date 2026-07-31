@@ -8,8 +8,8 @@ import com.ldtteam.blockui.views.*;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.profiling.ProfilerFiller;
-import net.neoforged.fml.loading.FMLEnvironment;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
@@ -62,7 +62,7 @@ public final class Loader extends SimplePreparableReloadListener<Map<Identifier,
         final String PARAM_PROPERTIES = "properties";
         if (paneParams.hasAttribute(ItemIconWithBlockState.PARAM_NBT))
         {
-            if (!FMLEnvironment.isProduction() && paneParams.hasAttribute(PARAM_PROPERTIES))
+            if (FabricLoader.getInstance().isDevelopmentEnvironment() && paneParams.hasAttribute(PARAM_PROPERTIES))
             {
                 throw new IllegalStateException("Must be one of '%s' or '%s'".formatted(ItemIconWithBlockState.PARAM_NBT, PARAM_PROPERTIES));
             }

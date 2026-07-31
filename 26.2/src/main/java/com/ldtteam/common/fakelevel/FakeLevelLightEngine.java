@@ -11,7 +11,7 @@ import net.minecraft.world.level.chunk.LightChunkGetter;
 import net.minecraft.world.level.lighting.LayerLightEventListener;
 import net.minecraft.world.level.lighting.LayerLightSectionStorage.SectionType;
 import net.minecraft.world.level.lighting.LevelLightEngine;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Porting: class is relatively small, just check super class manually (all of missing methods are/were just aliases)

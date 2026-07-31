@@ -23,9 +23,18 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+    // Both existing tests are JUnit 4 (org.junit.Test / org.junit.Assert); the vintage engine runs
+    // them on the JUnit 5 platform so they did not have to be rewritten during the port.
     testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'junit:junit:4.13.2'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Both surviving tests (IColourTest, XmlOpsTest) are still JUnit 4 sources — `org.junit.Test`
+    // and `org.junit.Assert`. Keep JUnit 4 on the test compile classpath and let the vintage engine
+    // run them on the JUnit Platform, rather than rewriting tests that belong to agents B and C.
+    testImplementation 'junit:junit:4.13.2'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine'
 }
 
 processResources {

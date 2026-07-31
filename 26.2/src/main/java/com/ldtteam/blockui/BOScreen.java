@@ -53,11 +53,13 @@ public class BOScreen extends Screen
     @Override
     public void extractRenderState(final GuiGraphicsExtractor ms, final int mx, final int my, final float f)
     {
-        if (ms.minecraft == null || !isOpen) // should never happen though
+        if (this.minecraft == null || !isOpen) // should never happen though
         {
             return;
         }
-        final WindowRenderState windowState = ms.minecraft.gameRenderer.getGameRenderState().windowRenderState;
+        // 26.2: GameRenderer#getGameRenderState() -> #gameRenderState()
+        // (/opt/mc-src/net/minecraft/client/gui/render/GuiRenderer.java:178)
+        final WindowRenderState windowState = this.minecraft.gameRenderer.gameRenderState().windowRenderState;
 
         absoluteMouseX = mx;
         absoluteMouseY = my;
@@ -67,7 +69,7 @@ public class BOScreen extends Screen
         final int guiHeight = Math.max(framebufferHeight, Window.BASE_HEIGHT);
 
         mcScale = windowState.guiScale;
-        renderScale = window.getRenderType().calcRenderScale(ms.minecraft.getWindow(), window);
+        renderScale = window.getRenderType().calcRenderScale(this.minecraft.getWindow(), window);
 
         width = window.getWidth();
         height = window.getHeight();
@@ -109,14 +111,16 @@ public class BOScreen extends Screen
         try
         {
             final double newMx = calcRelativeX(mx), newMy = calcRelativeY(my);
-            final BOGuiGraphics target = new BOGuiGraphics(ms.minecraft, newMs, ms.guiRenderState, (int) newMx, (int) newMy);
+            final BOGuiGraphics target = new BOGuiGraphics(this.minecraft, newMs, ms.guiRenderState, (int) newMx, (int) newMy);
 
-            if (window.hasBlurredBackground() && ms.minecraft.screen == this && target.guiRenderState.firstStratumAfterBlur == Integer.MAX_VALUE)
+            // 26.2: Minecraft#screen is gone -> Minecraft#gui.screen() (/opt/mc-src/net/minecraft/client/gui/Gui.java:218)
+            if (window.hasBlurredBackground() && this.minecraft.gui.screen() == this
+                && target.guiRenderState.firstStratumAfterBlur == Integer.MAX_VALUE)
             {
                 target.blurBeforeThisStratum();
             }
 
-            if (window.hasLightbox() && ms.minecraft.screen == this)
+            if (window.hasLightbox() && this.minecraft.gui.screen() == this)
             {
                 UiRenderMacros.fillGradient(target, 0, 0, framebufferWidth, framebufferHeight, -1072689136, -804253680);
                 // super.extractTransparentBackground(target);
@@ -127,7 +131,7 @@ public class BOScreen extends Screen
 
             window.draw(target, newMx, newMy);
 
-            if (ms.minecraft.screen == this)
+            if (this.minecraft.gui.screen() == this)
             {
                 int debugX = (int) (-x / renderScale) + 3;
                 if (Pane.debugging)
@@ -160,7 +164,9 @@ public class BOScreen extends Screen
 
     @Override // INLINE: partial inline - completely remove any extraction
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
-        this.minecraft.gui.extractDeferredSubtitles();
+        // 26.2: the deferred-subtitle sink moved from Gui onto Gui#hud
+        // (/opt/mc-src/net/minecraft/client/gui/Gui.java:208 -> this.hud.extractDeferredSubtitles())
+        this.minecraft.gui.hud.extractDeferredSubtitles();
     }
 
     @Override

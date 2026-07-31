@@ -3,7 +3,6 @@ package com.ldtteam.common.network;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * Bidirectional message
@@ -40,7 +39,7 @@ public abstract class AbstractPlayMessage extends AbstractUnsidedPlayMessage imp
      * @param context network context
      * @param player  client player which is receiving this packet
      */
-    protected abstract void onClientExecute(final IPayloadContext context, final Player player);
+    protected abstract void onClientExecute(final PlayMessageContext context, final Player player);
 
     /**
      * Executes message action on main thread.
@@ -48,5 +47,5 @@ public abstract class AbstractPlayMessage extends AbstractUnsidedPlayMessage imp
      * @param context network context
      * @param player  server player which is receiving this packet
      */
-    protected abstract void onServerExecute(final IPayloadContext context, final ServerPlayer player);
+    protected abstract void onServerExecute(final PlayMessageContext context, final ServerPlayer player);
 }

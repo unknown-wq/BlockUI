@@ -39,7 +39,7 @@ public class ItemIconWithBlockState extends ItemIcon
     public static final String PARAM_NBT = "nbt";
 
     /**
-     * BlockState + BlockEntity ModelData override
+     * BlockState + BlockEntity override
      */
     @Nullable
     protected BlockStateRenderingData blockStateExtension = null;

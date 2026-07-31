@@ -1,8 +1,8 @@
 package com.ldtteam.blockui.util;
 
 import com.ldtteam.blockui.mod.Log;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.Util;
-import net.neoforged.fml.loading.FMLEnvironment;
 import java.util.Objects;
 
 /**
@@ -17,13 +17,15 @@ public class SafeError
      */
     public static void throwInDev(final RuntimeException exception)
     {
-        if (FMLEnvironment.isProduction())
+        // NeoForge FMLEnvironment.isProduction() has no Fabric counterpart; the equivalent question
+        // "am I in a dev workspace?" is FabricLoader#isDevelopmentEnvironment (inverted).
+        if (FabricLoader.getInstance().isDevelopmentEnvironment())
         {
-            Log.getLogger().error(exception.getMessage(), exception);
+            throw Util.pauseInIde(exception);
         }
         else
         {
-            throw Util.pauseInIde(exception);
+            Log.getLogger().error(exception.getMessage(), exception);
         }
     }
 

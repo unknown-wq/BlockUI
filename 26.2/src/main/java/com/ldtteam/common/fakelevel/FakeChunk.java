@@ -29,7 +29,6 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.ticks.BlackholeTickAccess;
 import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.TickContainerAccess;
-import net.neoforged.neoforge.model.data.ModelData;
 import org.jetbrains.annotations.Nullable;
 import java.util.Collection;
 import java.util.Collections;
@@ -128,11 +127,16 @@ public class FakeChunk extends LevelChunk
         return getBlockEntities().keySet();
     }
 
+    // TODO(port-26.2): DISABLED - NeoForge's ModelData has no Fabric counterpart (contract K5). The 26.2
+    // equivalent, FabricBlockGetter#getBlockEntityRenderData(BlockPos), is inherited from BlockGetter and
+    // resolves the block entity through this chunk's getBlockEntity(pos), so no override is needed.
+    /*
     @Override
     public ModelData getModelData(BlockPos pos)
     {
         return fakeLevel.getModelData(pos);
     }
+    */
 
     // ========================================
     // ======= NOOP UNSAFE NULL METHODS =======
@@ -268,7 +272,7 @@ public class FakeChunk extends LevelChunk
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BlockState setBlockState(BlockPos p_62865_, BlockState p_62866_, @Block.UpdateFlags int p_62867_)
     {
         // Noop
@@ -300,7 +304,7 @@ public class FakeChunk extends LevelChunk
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public CompoundTag getBlockEntityNbt(BlockPos p_62103_)
     {
         // Noop, for pending BEs only
@@ -385,7 +389,7 @@ public class FakeChunk extends LevelChunk
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BlockEntity getBlockEntity(BlockPos p_62912_)
     {
         return super.getBlockEntity(p_62912_);
@@ -458,14 +462,14 @@ public class FakeChunk extends LevelChunk
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BelowZeroRetrogen getBelowZeroRetrogen()
     {
         return super.getBelowZeroRetrogen();
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BlendingData getBlendingData()
     {
         return super.getBlendingData();
@@ -544,7 +548,7 @@ public class FakeChunk extends LevelChunk
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public StructureStart getStartForStructure(Structure p_223005_)
     {
         return super.getStartForStructure(p_223005_);
@@ -599,7 +603,7 @@ public class FakeChunk extends LevelChunk
     }
 
     @Override
-    @javax.annotation.Nullable
+    @Nullable
     public BlockHitResult clipWithInteractionOverride(Vec3 p_45559_,
         Vec3 p_45560_,
         BlockPos p_45561_,
