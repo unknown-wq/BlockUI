@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "blockui",
+  "version": "${version}",
+
+  "name": "UI Library Mod",
+  "description": "UI Library mod, use ctrl+alt+shift+x to open a test-ui",
+  "authors": [
+    "LDT Team"
+  ],
+  "credits": [
+    "LDT Team"
+  ],
+  "contact": {
+    "sources": "https://github.com/ldtteam/BlockUI",
+    "issues": "https://github.com/ldtteam/BlockUI/issues/new/choose"
+  },
+
+  "license": "GPL-3.0-only",
+
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.ldtteam.blockui.mod.BlockUI"
+    ],
+    "client": [
+      "com.ldtteam.blockui.mod.BlockUIClient"
+    ]
+  },
+
+  "accessWidener": "blockui.accesswidener",
+
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "fabric-api": "*",
+    "minecraft": ">=26.2 <26.3",
+    "java": ">=25"
+  }
+}

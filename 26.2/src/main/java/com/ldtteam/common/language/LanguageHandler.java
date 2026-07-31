@@ -1,0 +1,99 @@
+package com.ldtteam.common.language;
+
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.ldtteam.blockui.mod.BlockUI;
+import net.minecraft.locale.Language;
+import org.apache.commons.io.IOUtils;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Helper class for localization and sending player messages.
+ * Note that MineColonies is still using some of these, so it's not safe to delete yet.
+ */
+public final class LanguageHandler
+{
+    /**
+     * Private constructor to hide implicit one.
+     */
+    private LanguageHandler()
+    {
+        // Intentionally left empty.
+    }
+
+    /**
+     * Translates key to readable string.
+     *
+     * @param key translation key
+     * @return readable string
+     */
+    public static String translateKey(final String key)
+    {
+        return LanguageCache.getInstance().translateKey(key);
+    }
+
+    /**
+     * Sets our cache to use mc default one.
+     */
+    public static void setMClanguageLoaded()
+    {
+        LanguageCache.getInstance().isMCloaded = true;
+        LanguageCache.getInstance().languageMap = null;
+    }
+
+    public static void loadLangPath(final String path)
+    {
+        LanguageCache.getInstance().load(path);
+    }
+
+    private static class LanguageCache
+    {
+        private static final String defaultLocale = "en_us";
+        private static final LanguageCache instance = new LanguageCache();
+        private boolean isMCloaded = false;
+        private Map<String, String> languageMap = new ConcurrentHashMap<>();
+
+        private LanguageCache()
+        {
+            load("assets/blockui/lang/%s.json");
+        }
+
+        private void load(final String path)
+        {
+            // contract K6: FMLEnvironment.getDist().isClient() -> BlockUI.isClient()
+            final String locale = BlockUI.isClient() ? ClientLocale.getLocale() : ServerLocale.getLocale();
+
+            InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(String.format(path, locale));
+            if (is == null)
+            {
+                is = Thread.currentThread().getContextClassLoader().getResourceAsStream(String.format(path, defaultLocale));
+            }
+            languageMap.putAll(new Gson().fromJson(new InputStreamReader(is, StandardCharsets.UTF_8), new TypeToken<Map<String, String>>()
+            {}.getType()));
+
+            IOUtils.closeQuietly(is);
+        }
+
+        private static LanguageCache getInstance()
+        {
+            return instance;
+        }
+
+        private String translateKey(final String key)
+        {
+            if (isMCloaded)
+            {
+                return Language.getInstance().getOrDefault(key);
+            }
+            else
+            {
+                final String res = languageMap.get(key);
+                return res == null ? Language.getInstance().getOrDefault(key) : res;
+            }
+        }
+    }
+}
