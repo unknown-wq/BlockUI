@@ -140,6 +140,7 @@ public abstract class AbstractConfiguration
 
     protected IntValue defineInteger(final String key, final int defaultValue, final int min, final int max)
     {
+        checkRange(key, defaultValue, min, max);
         return build(key,
             translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
             (p, t, c) -> new IntValue(p, t, c, defaultValue, min, max));
@@ -159,6 +160,7 @@ public abstract class AbstractConfiguration
 
     protected LongValue defineLong(final String key, final long defaultValue, final long min, final long max)
     {
+        checkRange(key, defaultValue, min, max);
         return build(key,
             translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
             (p, t, c) -> new LongValue(p, t, c, defaultValue, min, max));
@@ -166,14 +168,47 @@ public abstract class AbstractConfiguration
 
     protected DoubleValue defineDouble(final String key, final double defaultValue)
     {
-        return defineDouble(key, defaultValue, Double.MIN_VALUE, Double.MAX_VALUE);
+        // NOT Double.MIN_VALUE: that is the smallest *positive* double (4.9E-324), so using it as a lower bound
+        // made DoubleValue#set clamp every zero/negative assignment up to 4.9E-324. -Double.MAX_VALUE is the most
+        // negative finite double and the symmetric counterpart of the Double.MAX_VALUE upper bound; infinities are
+        // deliberately not used, as min/max are also rendered into the user facing default description above.
+        return defineDouble(key, defaultValue, -Double.MAX_VALUE, Double.MAX_VALUE);
     }
 
     protected DoubleValue defineDouble(final String key, final double defaultValue, final double min, final double max)
     {
+        checkRange(key, defaultValue, min, max);
         return build(key,
             translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
             (p, t, c) -> new DoubleValue(p, t, c, defaultValue, min, max));
+    }
+
+    /**
+     * Integral range guard, also used for {@code int} through widening.
+     * <p>
+     * The numeric {@link ConfigValue} subclasses clamp in {@code set}, so a default outside its own declared range
+     * would be silently rewritten. Failing here instead turns that into a hard error during mod init.
+     */
+    private static void checkRange(final String key, final long defaultValue, final long min, final long max)
+    {
+        if (min > max || defaultValue < min || defaultValue > max)
+        {
+            throw new IllegalArgumentException(
+                "Config '" + key + "': default " + defaultValue + " is outside of range [" + min + ", " + max + "]");
+        }
+    }
+
+    /**
+     * Floating point range guard. Written as negated positive assertions so that a NaN default or bound is rejected
+     * as well - {@code Math.clamp} would otherwise let it through.
+     */
+    private static void checkRange(final String key, final double defaultValue, final double min, final double max)
+    {
+        if (!(min <= max) || !(defaultValue >= min && defaultValue <= max))
+        {
+            throw new IllegalArgumentException(
+                "Config '" + key + "': default " + defaultValue + " is outside of range [" + min + ", " + max + "]");
+        }
     }
 
     /**
