@@ -13,10 +13,11 @@ repositories {
 }
 
 dependencies {
-    // No `mappings` line: since 26.1 the game ships with Mojang's own names.
+    // No `mappings` line and no `mod` prefix on configurations: since 26.1 the
+    // game ships unobfuscated, so there is nothing left to remap.
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
