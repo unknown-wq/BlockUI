@@ -225,13 +225,30 @@ javac -nowarn -proc:none -Xmaxerrs 3000 --release 25 -cp "$CP" -d /tmp/out-<ро
   **Ни одна существующая публичная сигнатура не изменена**; добавлен только перегруженный
   `Configurations(String modId, …)` и `Configurations#saveAll()`.
 
+- **K4 — конфиг восстановлен дальше (server → client sync).** Возвращён логин-синк
+  SERVER-конфига (`ConfigTracker`): `common/config/ConfigSync.java` (формат + логика),
+  `ConfigSyncManager.java` (реестр деревьев + хуки жизненного цикла),
+  `ConfigSyncMessage.java` (payload поверх собственного `PlayMessageType`, а не самописной
+  сети). Полученные значения кладутся **оверлеем** поверх локальных (`ConfigValue#applySync`),
+  локальное значение не трогается, и `ConfigStore#render()` пишет в файл именно его — синк
+  физически не может переписать `config/<modid>-server.toml` игрока. Отключение
+  (`ClientPlayConnectionEvents.DISCONNECT`) просто снимает оверлей, снапшот не нужен.
+  Синкается только SERVER; CLIENT — никогда, COMMON — как и в NeoForge, нет.
+  Синглплеер — no-op (клиент и интегрированный сервер делят одни и те же объекты).
+  Отличия от NeoForge: play-фаза вместо login-фазы и отсутствие кика при расхождении схемы.
+  Добавлены только `ConfigValue#isSynced()`, `Configurations#isSyncedFromServer()` и новый
+  класс `ConfigSyncManager`.
+
 ---
 
 ## Disabled content
 
-- **K4, остаток среза.** Синхронизация server-конфига на клиент при логине (`ConfigTracker`) — не сделана.
 - **K4, остаток среза.** Per-world server-конфиг: файл лежит в `config/`, а не в `<world>/serverconfig/`,
-  т.е. один на инсталляцию, а не на мир.
+  т.е. один на инсталляцию, а не на мир. Синк это не блокирует: он читает значения из
+  `ConfigStore`, а не файл, — per-world остаётся вопросом того, откуда стор грузится.
+- **K4, остаток среза.** Синк идёт в play-фазе (`ServerPlayConnectionEvents.JOIN`), а не в
+  login/configuration-фазе, как `ConfigTracker`: `PlayMessageType` умеет только play-payload.
+  Значения приезжают через несколько тиков после входа в мир.
 - **K4, остаток среза.** Генерируемый экран настроек (`IConfigScreenFactory`) и слежение за файлом
   (hot-reload правок извне) — не сделаны; `ConfigValue#clearCache()` осознанно остаётся no-op.
 
@@ -240,6 +257,13 @@ javac -nowarn -proc:none -Xmaxerrs 3000 --release 25 -cp "$CP" -d /tmp/out-<ро
 ## Verification
 
 *(пусто — результаты `compileJava` / `build` / `runServer`)*
+
+**Config sync (K4).** `gradle build` — `BUILD SUCCESSFUL`, 55 тестов, 0 падений (было 38; +15
+`ConfigSyncTest`, +2 `ConfigSyncMessageTest`). `gradle runServer` — `Done (0.359s)!`, ни одного
+`ERROR`: значит регистрация payload'а и хук `ServerPlayConnectionEvents.JOIN` проходят на
+выделенном сервере без затягивания клиентских классов. **Сам обмен клиент↔сервер в живой игре не
+проверялся** — дисплея нет; проверено только то, что кодируется/декодируется и применяется в
+юнит-тестах.
 
 **Заранее известное ограничение приёмки.** BlockUI — библиотека GUI: на выделенном сервере она
 не делает почти ничего. `runServer` проверяет здесь ровно одно — **безопасность загрузки классов**

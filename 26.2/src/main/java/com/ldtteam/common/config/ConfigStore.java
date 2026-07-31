@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,9 +42,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * single drag is one file write per frame. A flush is additionally forced on world/client shutdown and from a JVM
  * shutdown hook, so at most the last {@value #DEBOUNCE_MILLIS} ms of edits can be lost, and only to a hard kill.
  * <p>
- * Not covered here, deliberately: client/server synchronisation. NeoForge's {@code ConfigTracker} shipped the
- * server config to joining clients; that is a separate piece of work and nothing below forecloses it - a syncing
- * layer would push received values through {@link ConfigValue#setRaw(Object)} exactly like {@link #load()} does.
+ * Client/server synchronisation lives next door, in {@link ConfigSync}. The one thing it needs from here is the
+ * guarantee that a synced value can never reach the file: {@link #render()} deliberately renders
+ * {@link ConfigValue#getLocalValue()}, not {@link ConfigValue#get()}, so a flush that happens while a server
+ * override is in effect still writes this installation's own settings.
  */
 public final class ConfigStore
 {
@@ -99,6 +101,13 @@ public final class ConfigStore
     @Nullable
     private volatile Path file;
 
+    /**
+     * Mod this store belongs to; set by {@link #bindModId(String)} even when the file could not be resolved, so
+     * that {@link ConfigSync} can still address an in-memory-only configuration.
+     */
+    @Nullable
+    private volatile String modId;
+
     private volatile boolean dirty = false;
     private final AtomicBoolean flushScheduled = new AtomicBoolean(false);
 
@@ -121,10 +130,12 @@ public final class ConfigStore
      */
     void bindModId(final String modId)
     {
-        if (file != null || modId == null || modId.isBlank())
+        if (this.modId != null || modId == null || modId.isBlank())
         {
             return;
         }
+
+        this.modId = modId;
 
         try
         {
@@ -161,6 +172,40 @@ public final class ConfigStore
     public Path getFile()
     {
         return file;
+    }
+
+    /**
+     * @return which of the three configurations this is
+     */
+    Type getType()
+    {
+        return type;
+    }
+
+    /**
+     * @return the mod this store belongs to, or null when nothing was ever bound
+     */
+    @Nullable
+    String getModId()
+    {
+        return modId;
+    }
+
+    /**
+     * @return every value registered here, in declaration order; the collection is a live view, do not modify
+     */
+    Collection<ConfigValue<?>> getValues()
+    {
+        return values.values();
+    }
+
+    /**
+     * @param  value any config value
+     * @return       true when it was minted into this store
+     */
+    boolean owns(final ConfigValue<?> value)
+    {
+        return values.get(value.getPath()) == value;
     }
 
     /**
@@ -304,6 +349,11 @@ public final class ConfigStore
         }
     }
 
+    /**
+     * Renders the whole file. Note the {@link ConfigValue#getLocalValue()} below: a value that a server is
+     * currently overriding is written out with <em>this installation's</em> setting, never the server's. That is
+     * what keeps a session on a remote server from silently rewriting the player's own config file.
+     */
     private String render()
     {
         // "" is the root category and must come first; everything else keeps declaration order
@@ -348,7 +398,7 @@ public final class ConfigStore
                 sb.append(indent)
                     .append(lastSegment(value.getPath()))
                     .append(" = ")
-                    .append(FlatToml.format(value.get()))
+                    .append(FlatToml.format(value.getLocalValue()))
                     .append('\n');
             }
         }
