@@ -221,11 +221,41 @@ null check somewhere?")` — то есть жёстко бросал ровно 
 собирает украшенное сообщение только когда значение реально `null` — раньше конкатенация строки
 выполнялась на каждый кадр на каждую панель.
 
-**Проверено машинно:** `gradle build`, `gradle test` — 12 тестовых классов зелёные, из них два
-новых (`GuiAtlasLookupTest`, `ResolvedWidgetSpritesTest`, 6 тестов). Оба набора прогнаны и на
-до-фиксной форме кода: `ResolvedWidgetSpritesTest` падает 3 из 3, `GuiAtlasLookupTest` 2 из 3
-(третий и должен проходить — он проверяет, что зарегистрированный namespace по-прежнему идёт
-в атлас). Клиента в контейнере нет; `Pane` headless вообще не инстанцируется —
+**Четвёртое ложное срабатывание — `Missing resource X referenced from X`.** Того же класса, найдено
+агентом на стороне MineColonies:
+
+```
+[WARN]: Missing resource minecolonies:building/scarecrow/north referenced from minecolonies:building/scarecrow/north
+```
+
+`Image.resolveBlit` звал `OutOfJarTexture.assertLoadedDefaultManagers(resLoc)` **до** обращения к
+атласу и безусловно. Для id, который является спрайтом атласа, а не отдельным файлом, это уходит в
+`TextureManager#getTexture` → `SimpleTexture` → файла нет → `loadContentsSafe` пишет ровно эту
+строку (`/opt/mc-src/.../texture/TextureManager.java:173`). То есть **каждый корректно сшитый
+спрайт, отрисованный через `Image`, рапортовал о себе как о пропавшем ресурсе** — включая ванильные
+спрайты тултипов через `Tooltip`. Доказано с двух сторон: порядком вызовов в байткоде
+`Image.resolveBlit` и прогоном содержимого атласа настоящим ванильным кодом 26.2
+(`SpriteSources.bootstrap()` + `SpriteSourceList` + `Unstitcher.run` + декодирование
+`SpriteContents`) прямо из собранного джара — 19 спрайтов из 19 на месте, ни один из
+«пропавших» не пропадал.
+
+Вызов переехал **под** резолв атласа, на ветку отдельного файла. Диагностика цела: ресурс, которого
+действительно нет и который не спрайт, в атласе не найдётся, дойдёт до этой строки и сообщит о себе
+ровно как раньше. Оба эффекта вызова принадлежат именно этой ветке — out-of-jar локация не может
+быть спрайтом атласа, а `getImageDimensions` в u/v-ветке идёт следом. Та же последовательность есть
+и в `26.1.2` — снова не порт.
+
+**Проверено машинно:** `gradle build`, `gradle test` — 13 тестовых классов зелёные, из них три
+новых (`GuiAtlasLookupTest`, `ResolvedWidgetSpritesTest`, `ImageResolveBlitOrderTest`, 8 тестов).
+Все три прогнаны и на до-фиксной форме кода: `ResolvedWidgetSpritesTest` падает 3 из 3,
+`GuiAtlasLookupTest` 2 из 3 (третий и должен проходить — он проверяет, что зарегистрированный
+namespace по-прежнему идёт в атлас), `ImageResolveBlitOrderTest` 1 из 2 (второй проверяет, что
+вызов текстур-менеджера вообще остался на месте, и обязан проходить в обеих формах).
+
+Порядок вызовов рантаймом не проверить: `Image.resolveBlit` требует живого `Minecraft`. Поэтому
+`ImageResolveBlitOrderTest` читает его статически из скомпилированного класса через `java.lang.classfile`
+(JDK 24+, у нас 25) — тем же способом, каким ложное срабатывание изначально доказали. Байты
+берутся у класслоадера как ресурс, сам класс не грузится. Клиента в контейнере нет; `Pane` headless вообще не инстанцируется —
 `Cursor.<clinit>` собирает `Map.ofEntries` из `CursorTypes.*`, а без GLFW
 `glfwCreateStandardCursor` возвращает 0 и все они схлопываются в `CursorType.DEFAULT`
 (`duplicate key: default`). Это артефакт headless-JVM, не прод-баг, но он ограничивает,
