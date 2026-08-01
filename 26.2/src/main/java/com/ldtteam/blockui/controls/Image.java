@@ -161,16 +161,27 @@ public class Image extends Pane
             return (ps, x, y, w, h, c) -> blit(ps, MissingTextureAtlasSprite.getLocation(), x, y, w, h, c);
         }
 
-        // this is called by most of image classes -> parse our textures
-        OutOfJarTexture.assertLoadedDefaultManagers(resLoc);
-
-        // never throws and answers "not in any atlas" with null - see GuiAtlasLookup for why that matters in 26.2
+        // Ask the atlas first, and only then the texture manager. A sprite id has no stand-alone file behind it -
+        // minecolonies:building/scarecrow/north lives inside an atlas, there is no
+        // textures/building/scarecrow/north.png - so handing it to the texture manager makes vanilla try to load that
+        // file, fail, and log "Missing resource <id> referenced from <id>"
+        // (TextureManager#loadContentsSafe, one line per id per reload) for a sprite that is present and correctly
+        // stitched. With the texture-manager call sitting above this lookup and running unconditionally, every single
+        // sprite drawn through Image reported itself as a missing resource - vanilla's own tooltip sprites included.
+        // Never throws and answers "not in any atlas" with null - see GuiAtlasLookup for why that matters in 26.2.
         final TextureAtlasSprite atlasSprite = GuiAtlasLookup.resolveSprite(resLoc);
 
         if (atlasSprite != null)
         {
             return resolveSprite(atlasSprite, atlasSprite.contents().getAdditionalMetadata(GuiMetadataSection.TYPE).orElse(GuiMetadataSection.DEFAULT).scaling());
         }
+
+        // Not in any atlas, so from here on this is a stand-alone texture and the texture manager is the right thing
+        // to ask. Both effects of this call belong on this branch and only on it: out-of-jar locations get registered
+        // and loaded (they can never be atlas sprites), and a file that genuinely does not exist reports itself
+        // through vanilla's warning. The diagnostic is kept in full - it is simply no longer fired at ids that were
+        // never meant to be files.
+        OutOfJarTexture.assertLoadedDefaultManagers(resLoc);
 
         // if full blit do normal blit
         if (u == 0 && v == 0 && uWidth == 0 && vHeight == 0)
