@@ -4,12 +4,11 @@ import com.ldtteam.blockui.BOGuiGraphics;
 import com.ldtteam.blockui.Pane;
 import com.ldtteam.blockui.PaneParams;
 import com.ldtteam.blockui.Parsers;
-import com.ldtteam.blockui.mod.BlockUI;
 import com.ldtteam.blockui.util.records.SizeI;
+import com.ldtteam.blockui.util.texture.GuiAtlasLookup;
 import com.ldtteam.blockui.util.texture.OutOfJarTexture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.metadata.gui.GuiMetadataSection;
 import net.minecraft.resources.Identifier;
@@ -55,7 +54,8 @@ public class Image extends Pane
         });
 
         resourceLocation = params.getResource("source");
-        requireNonNull(resourceLocation, "Missing image texture (if dynamic in code use: minecraft:missingno)");
+        requireNonNull(resourceLocation,
+            "Missing image texture, source=\"" + params.getString("source", "") + "\" (if dynamic in code use: minecraft:missingno)");
     }
 
     /**
@@ -85,7 +85,11 @@ public class Image extends Pane
         {
             return;
         }
-        requireNonNull(resourceLocation, "Missing image texture");
+        // validate the incoming texture, not the one being replaced. Checking the old field reported every single
+        // `new Image()` + `setImage(...)` pair - the field starts as null and the setter is the thing that fills it -
+        // which is where the "Missing image texture (UNKNOWN)" flood on window open came from, while a caller actually
+        // passing null went unreported.
+        requireNonNull(rl, "Missing image texture");
 
         this.resourceLocation = rl;
         this.u = u;
@@ -160,12 +164,10 @@ public class Image extends Pane
         // this is called by most of image classes -> parse our textures
         OutOfJarTexture.assertLoadedDefaultManagers(resLoc);
 
-        final TextureAtlas guiAtlas =
-            Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(BlockUI.NAMESPACE_TO_ATLAS_MAP.get(resLoc.getNamespace()));
-        final TextureAtlasSprite atlasSprite = guiAtlas.getSprite(resLoc);
+        // never throws and answers "not in any atlas" with null - see GuiAtlasLookup for why that matters in 26.2
+        final TextureAtlasSprite atlasSprite = GuiAtlasLookup.resolveSprite(resLoc);
 
-        // unless we sprited missing texture pass to sprite blit (intentional object equality)
-        if (atlasSprite != guiAtlas.missingSprite())
+        if (atlasSprite != null)
         {
             return resolveSprite(atlasSprite, atlasSprite.contents().getAdditionalMetadata(GuiMetadataSection.TYPE).orElse(GuiMetadataSection.DEFAULT).scaling());
         }

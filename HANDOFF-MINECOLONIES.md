@@ -107,10 +107,16 @@ AtlasRegistry.register(new AtlasConfig(
 должен быть уникальным по мод-иду (`gui/minecolonies_sprites`, не `gui/sprites`) —
 директории склеиваются между модами.
 
-> ⚠️ **Строка с `NAMESPACE_TO_ATLAS_MAP` обязательна.** `getAtlasOrThrow` не терпит `null`:
-> без записи в карте первая же отрисовка `Image` с текстурой `minecolonies:` даст
-> `IllegalArgumentException`. Регистрировать строго в `onInitializeClient()` — после
-> `finalizeConfigs()` будет `IllegalStateException`.
+> ⚠️ **Строка с `NAMESPACE_TO_ATLAS_MAP` нужна, если вы хотите спрайты.** Регистрировать строго
+> в `onInitializeClient()` — после `finalizeConfigs()` будет `IllegalStateException`.
+>
+> **Обновлено:** раньше отсутствие записи было *фатальным* — `getAtlasOrThrow(null)` бросал
+> `IllegalArgumentException: Invalid atlas id: null` на первой же отрисовке `Image` с текстурой
+> `minecolonies:`, и весь экран падал `ReportedException: Rendering BO screen`. Теперь BlockUI
+> (`util/texture/GuiAtlasLookup`) трактует незарегистрированный namespace как «у этого мода нет
+> gui-атласа» и рисует текстуру как отдельный файл; в лог уходит одна debug-строка на namespace.
+> То есть **забыть регистрацию больше не краш, но спрайты из атласа при этом не найдутся** —
+> текстуры, которые есть только внутри атласа, отрисуются как missingno.
 
 ### 4. ColouredVertexConsumer — тоже удалён upstream, и семантика не та
 

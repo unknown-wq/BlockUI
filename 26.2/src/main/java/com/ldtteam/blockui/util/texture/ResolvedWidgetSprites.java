@@ -7,7 +7,6 @@ import net.minecraft.client.gui.components.WidgetSprites;
 import net.minecraft.resources.Identifier;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 
 /**
@@ -25,13 +24,21 @@ public record ResolvedWidgetSprites(ResolvedBlit enabled,
     public static IColour DISABLED_MODULATOR = new ColourQuartet4f(0.5f, 0.5f, 0.5f, 1.0f);
 
     /**
+     * Resolves the given sprites, tolerating a null {@code enabled} texture.
+     * <p>
+     * The single caller, {@code ButtonImage#drawSelf}, checks {@code enabled} through {@code SafeError} on the line
+     * above - which in production logs and carries on by design. A hard {@code Objects.requireNonNull} here therefore
+     * threw exactly the case the check had just decided to survive, on the render path, where it surfaces as
+     * {@code ReportedException: Rendering BO screen}. The resolver already answers null with the missing-texture blit,
+     * so there is nothing left to guard.
+     *
      * @return resolve given sprites using given resolver
      */
     public static ResolvedWidgetSprites fromUnresolved(final WidgetSprites widgetSprites,
         final Function<Identifier, ResolvedBlit> resolver)
     {
         final Map<Identifier, ResolvedBlit> resolved = new HashMap<>();
-        final ResolvedBlit defaultEnabledBlit = resolver.apply(Objects.requireNonNull(widgetSprites.enabled(), "Forgot to put null check somewhere?"));
+        final ResolvedBlit defaultEnabledBlit = resolver.apply(widgetSprites.enabled());
         resolved.put(null, defaultEnabledBlit);
         resolved.put(widgetSprites.enabled(), defaultEnabledBlit);
 
