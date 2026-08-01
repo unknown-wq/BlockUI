@@ -15,6 +15,7 @@ import net.minecraft.network.chat.MutableComponent;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * A Pane is the root of all UI objects.
@@ -212,6 +213,22 @@ public class Pane extends UiRenderMacros
         if (value == null)
         {
             SafeError.requireNonNull(null, errorMessage + " (" + getXmlRelatedId() + ")");
+        }
+    }
+
+    /**
+     * Same as {@link #requireNonNull(Object, String)} for messages that cost something to build, or that are only
+     * legal to build in the failure case. The laziness of the argument above stops at the decoration this method adds:
+     * the message a caller passes is an ordinary expression and is evaluated whether or not the value is null.
+     *
+     * @param value        the reference to check
+     * @param errorMessage produces the message, called only when {@code value} is null
+     */
+    public void requireNonNull(final Object value, final Supplier<String> errorMessage)
+    {
+        if (value == null)
+        {
+            requireNonNull(null, errorMessage.get());
         }
     }
 

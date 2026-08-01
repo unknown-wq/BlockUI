@@ -54,8 +54,12 @@ public class Image extends Pane
         });
 
         resourceLocation = params.getResource("source");
+        // lazily: the message is what names the offending texture, and naming it means reading `source` a second time,
+        // as a string this time. Passed as a plain argument it was built for every image that has a source at all,
+        // not just for the ones that failed to resolve - so the cost, and until PaneParams' property cache learned to
+        // tell an Identifier from a String the crash, hit every window in the game.
         requireNonNull(resourceLocation,
-            "Missing image texture, source=\"" + params.getString("source", "") + "\" (if dynamic in code use: minecraft:missingno)");
+            () -> "Missing image texture, source=\"" + params.getString("source", "") + "\" (if dynamic in code use: minecraft:missingno)");
     }
 
     /**

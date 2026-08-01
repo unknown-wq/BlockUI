@@ -1,6 +1,5 @@
 package com.ldtteam.blockui;
 
-import com.ldtteam.blockui.mod.Log;
 import com.ldtteam.blockui.util.SafeError;
 import com.ldtteam.blockui.views.View;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -21,7 +20,19 @@ import java.util.function.Function;
  */
 public class PaneParams
 {
-    private final Map<String, Object> propertyCache = new HashMap<>();
+    /**
+     * Identifies a cached attribute value. The attribute name alone is not enough: one attribute may legitimately be
+     * read through several accessors, and each of them parses it into a different type - see {@link #getProperty} for
+     * what happened when the name was the whole key.
+     *
+     * @param name       the xml attribute name
+     * @param parserKind what the value was parsed into, see {@link #getProperty(String, Object, Function, Object)}
+     */
+    private record PropertyKey(String name, Object parserKind)
+    {
+    }
+
+    private final Map<PropertyKey, Object> propertyCache = new HashMap<>();
     private final List<PaneParams>    children;
     private final Node                node;
     private       View                parentView;
@@ -150,28 +161,62 @@ public class PaneParams
      * @param <T> the type of value to work with
      * @return the parsed value
      */
-    @SuppressWarnings("unchecked")
     public <T> T getProperty(String name, Function<String, T> parser, T def)
     {
-        T result = null;
+        // A stateless parser is fully described by its own class: Parsers.INT always produces an Integer,
+        // Parsers.RESOURCE always an Identifier, String::toString always a String. Accessors whose parser is
+        // parameterised by a type know better and pass that type themselves, see getEnum.
+        return getProperty(name, parser.getClass(), parser, def);
+    }
 
-        if (propertyCache.containsKey(name))
+    /**
+     * Finds an attribute by name from the XML node and parses it using the provided parser method, caching the result
+     * per (name, parserKind) pair.
+     * <p>
+     * The cache used to be keyed by attribute name alone, which is what made every window holding an
+     * {@code <image source="...">} fail to parse: {@code Image}'s constructor reads {@code source} through
+     * {@link #getResource} for the texture and through {@link #getString} for the diagnostic message, and the second
+     * read got the first read's {@link Identifier} back under the same key. The guard that was meant to catch this -
+     * a {@code (T)} cast wrapped in {@code catch (ClassCastException)} - could never fire: {@code T} is erased, so
+     * javac emits no {@code checkcast} here at all and puts one on the caller's side instead, where the mismatch blew
+     * up as {@code Identifier cannot be cast to String} from inside {@code Image.<init>}. There is no runtime type
+     * token in this method to check a cached value against, so rather than resurrect a check that cannot be written,
+     * the situation is made unreachable: a value can only ever be read back through a parser of the kind that
+     * produced it, and a different kind is simply a cache miss.
+     * <p>
+     * {@code parserKind} is the parser's <em>class</em> and not the parser instance, because {@code Parsers.ENUM} and
+     * {@code Parsers.SCALED} are factories handing out a fresh lambda per call - keying on identity would never hit
+     * for them and would grow this map once per window open, {@code PaneParams} instances living in {@link Loader}'s
+     * xml cache for the whole session. One lambda class per call site is exactly the granularity wanted.
+     * <p>
+     * Known limit, unchanged by this: a parser parameterised by something other than its result type still shares one
+     * entry per name, so reading one attribute with {@code Parsers.SCALED(a)} and then {@code Parsers.SCALED(b)}
+     * returns the first scale's number. That is a wrong value rather than a wrong type and predates the type keying.
+     *
+     * @param name the attribute name to search for
+     * @param parserKind identifies what the parser turns the attribute into; equal kinds must mean equal types
+     * @param parser the parser to convert the attribute to its property
+     * @param def the default value if none can be found
+     * @param <T> the type of value to work with
+     * @return the parsed value
+     */
+    @SuppressWarnings("unchecked") // safe by construction: the key carries the type the value was parsed into
+    private <T> T getProperty(final String name, final Object parserKind, final Function<String, T> parser, final T def)
+    {
+        final PropertyKey key = new PropertyKey(name, parserKind);
+
+        if (propertyCache.containsKey(key))
         {
-            try
-            {
-                result = (T) propertyCache.get(name);
-                return result != null ? result : def;
-            }
-            catch (ClassCastException cce)
-            {
-                Log.getLogger().warn("Invalid property: previous value of key does not match type.");
-            }
+            final T cached = (T) propertyCache.get(key);
+            return cached != null ? cached : def;
         }
+
+        T result = null;
 
         final Node attr = getAttribute(name);
         if (attr != null) result = parser.apply(attr.getNodeValue());
 
-        propertyCache.put(name, result);
+        propertyCache.put(key, result);
         return result != null ? result : def;
     }
 
@@ -372,7 +417,9 @@ public class PaneParams
      */
     public <T extends Enum<T>> T getEnum(final String name, final Class<T> clazz, final T def)
     {
-        return getProperty(name, Parsers.ENUM(clazz), def);
+        // every Parsers.ENUM(...) lambda shares one class, so the enum class itself is the cache kind - otherwise one
+        // attribute read as two different enums would collide, which is the single case parser-class keying misses
+        return getProperty(name, clazz, Parsers.ENUM(clazz), def);
     }
 
     /**

@@ -263,6 +263,83 @@ namespace по-прежнему идёт в атлас), `ImageResolveBlitOrderT
 
 ---
 
+## Кэш свойств `PaneParams` отдавал значение чужого типа
+
+Живой клиент не открывал **ни одного** окна с картинкой — ни хижину, ни поле:
+
+```
+java.lang.RuntimeException: Can't parse xml at: minecolonies:gui/windowhutworkerplaceholder.xml
+  Caused by: … layouthutpageactionsminwoinv.xml
+  Caused by: java.lang.ClassCastException: class net.minecraft.resources.Identifier
+                                           cannot be cast to class java.lang.String
+	at com.ldtteam.blockui.PaneParams.getString(PaneParams.java:238)
+	at com.ldtteam.blockui.controls.Image.<init>(Image.java:58)
+```
+
+**Спусковой крючок наш**, из предыдущей правки: конструктор `Image` стал печатать сырое значение
+атрибута `source`, и ради этого читает один атрибут дважды —
+`getResource("source")` для текстуры и `getString("source", "")` для сообщения.
+
+**Мина — не наша.** `PaneParams#getProperty` кэшировал разобранное значение **по имени атрибута,
+без типа**, и точно так же кэширует в `26.1.2`: файлы отличаются одной строкой импорта
+(`javax.annotation.Nullable` → `org.jetbrains.annotations.Nullable`). До нас в дереве просто не было
+ни одного места, читающего один атрибут двумя аксессорами, — грепом по всем
+`getString(`/`getResource(`/`getInteger(`/… единственная такая пара и сегодня одна, та самая в
+`Image`. Мина лежала и ждала любого будущего кода, который прочитает атрибут двумя способами.
+
+**Защита в `getProperty` была мертва по построению:**
+
+```java
+try { result = (T) propertyCache.get(name); return … }
+catch (ClassCastException cce) { Log.getLogger().warn("Invalid property: …"); }
+```
+
+`T` стёрт, поэтому `checkcast` в этом методе **не генерируется вовсе** — javac ставит его на возврате
+из `getString` у вызывающего. `catch` не мог сработать ни разу, а исключение вылетало в `Image.<init>`,
+за три кадра стека от ловушки. Диагностическая строка PR #6 не создала проблему, а вскрыла её.
+
+**Починка кэша.** Ключ стал парой `(имя, вид парсера)`, `PropertyKey`. Проверить фактический тип
+перед возвратом нельзя — рантайм-токена типа в `getProperty` нет и взять его неоткуда (у
+`getMultilineText` тип вообще `List<MutableComponent>`, `Class` его не выражает). Поэтому вместо
+воскрешения непишущейся проверки ситуация сделана недостижимой: значение можно прочитать только тем
+же видом парсера, каким оно положено, чужой вид — обычный промах кэша.
+
+Вид парсера — его **класс**, не экземпляр: `Parsers.ENUM`/`Parsers.SCALED` — фабрики, отдающие свежую
+лямбду на каждый вызов, и ключ по идентичности для них никогда бы не попадал в кэш, а карта росла бы
+на запись за каждое открытие окна (`PaneParams` живут в xml-кэше `Loader` всю сессию). Один класс
+лямбды на call-site — ровно нужная гранулярность. Единственный случай, который класс парсера не
+различает, — один атрибут, читаемый как два разных енума: у `getEnum` есть `clazz`, он и передаётся
+видом. Осталось известным ограничением: `Parsers.SCALED(a)` и `SCALED(b)` на одном имени делят запись
+— это неверное значение, а не неверный тип, и было так же до правки.
+
+**Сообщение — под `Supplier`.** Аргумент метода вычисляется безусловно, поэтому строка с `source`
+собиралась для **каждой** картинки, а не только для нерезолвнутой; отсюда и падение на всех окнах,
+а не на сломанных. У `Pane#requireNonNull` появилась перегрузка с `Supplier<String>` — теперь
+лениво не только украшение сообщения (`getXmlRelatedId`, PR #6), но и то, что даёт вызывающий.
+Диагностика сохранена дословно: `source="…"` по-прежнему называется, когда текстура не разрешилась.
+
+**Проверено машинно:** `gradle build`, `gradle test` — 14 тестовых классов, 87 тестов, 0 падений.
+Новый `PaneParamsPropertyCacheTest` (6 тестов) на до-фиксном коде падает 4 из 6, ровно теми
+исключениями, что в логе клиента:
+
+```
+aResourceReadDoesNotPoisonAStringRead  ClassCastException: Identifier cannot be cast to String
+aStringReadDoesNotPoisonAResourceRead  ClassCastException: String cannot be cast to Identifier
+aNumberReadDoesNotPoisonAStringRead    ClassCastException: Integer cannot be cast to String
+anEnumReadDoesNotPoisonAStringRead     ClassCastException: Alignment cannot be cast to String
+```
+
+Два оставшихся обязаны проходить в обеих формах: кэш всё ещё кэширует (повтор через тот же аксессор
+— тот же объект) и отсутствующий атрибут даёт дефолт каждому аксессору.
+
+В отличие от почти всего остального в этой библиотеке, `PaneParams` тестируется **рантаймом, а не
+байткодом**: `Pane` на нём не висит и клиентского состояния он не трогает — хватает DOM-узла от
+джедековского парсера и `Identifier`. Ленивость сообщения проверена в скомпилированном `Image.<init>`:
+`PaneParams.getString` там больше нет, он уехал в `lambda$new$2`, который зовётся только из
+`requireNonNull` при `null`.
+
+---
+
 ## Открытые проблемы
 
 ### Долг на нашей стороне
@@ -361,9 +438,11 @@ render-state систему, без `BufferBuilder`. Готовой формы �
 
 ## Состояние сборки
 
-`gradle build` на ветке — `BUILD SUCCESSFUL`, **59 тестов, 0 падений**: 21 `XmlOpsTest`,
+`gradle build` на ветке — `BUILD SUCCESSFUL`, **87 тестов, 0 падений**: 21 `XmlOpsTest`,
 1 `IColourTest`, 8 `ConfigStoreTest`, 8 `FlatTomlTest`, 15 `ConfigSyncTest`,
-2 `ConfigSyncMessageTest`, 4 `LanguageFileLookupTest`.
+2 `ConfigSyncMessageTest`, 4 `LanguageFileLookupTest`, 4 `ItemStackHandlerTest`,
+6 `InvWrapperTest`, 4 `CombinedInvWrapperTest`, 3 `GuiAtlasLookupTest`,
+3 `ResolvedWidgetSpritesTest`, 2 `ImageResolveBlitOrderTest`, 6 `PaneParamsPropertyCacheTest`.
 
 `gradle runServer` доходит до `Done!` без единой строки `ERROR` — это подтверждает, что
 регистрация payload'а и хук `ServerPlayConnectionEvents.JOIN` отрабатывают на выделенном
