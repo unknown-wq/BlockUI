@@ -249,6 +249,19 @@ javac -nowarn -proc:none -Xmaxerrs 3000 --release 25 -cp "$CP" -d /tmp/out-<ро
   Остальные `default`-методы интерфейса намеренно не переопределены — все они вызывают
   `this.<abstract>`, то есть проходят через обёртку. **В дереве нет ни одного вызывающего — при
   следующем мерже с upstream не удалять как мёртвый код** (пометка продублирована в javadoc класса).
+- **`com.ldtteam.common.inventory` — новый общий слой, публичное API сверх upstream 26.x.** Замена
+  исчезнувшему `net.neoforged.neoforge.items.*`. Structurize и MineColonies портировали один и тот же
+  интерфейс независимо и получили метод-в-метод одно и то же; тип поселили сюда, потому что от BlockUI
+  зависят все трое, а от Structurize — только MineColonies (81 файл у них против ~5 у Structurize).
+  `IItemHandler` (`getSlotLimit`/`isItemValid` — `default`, надмножество обеих копий),
+  `IItemHandlerModifiable`, `EmptyItemHandler`, `InvWrapper` (целиком или явным диапазоном слотов),
+  `PlayerMainInvWrapper`, `ItemStackHandler`, `CombinedInvWrapper`, `SlotItemHandler`, `ItemHandlers`.
+  **Это не капабилити и не транзакции:** `ItemHandlers` резолвит только то, что показывает ваниль
+  (`Container` и `DataComponents.CONTAINER`), зависимости на `fabric-transfer-api-v1` нет и не должно
+  появиться. Ключевая ловушка зашита в типы: `Inventory#getContainerSize()` считает и слоты экипировки,
+  а `canPlaceItem` `Inventory` не переопределяет, поэтому обёртка «весь инвентарь игрока» приняла бы
+  что угодно в слот брони — отсюда `PlayerMainInvWrapper` и диапазонный конструктор `InvWrapper`.
+  **В дереве нет ни одного вызывающего — пакет существует для потребителей, не удалять как мёртвый код.**
 
 ---
 
