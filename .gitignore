@@ -23,6 +23,9 @@
 logs/
 *.hprof
 
+# scratch git worktrees created by tooling, never part of the source tree
+/.claude/worktrees
+
 # IDE
 /.idea
 /*.iml

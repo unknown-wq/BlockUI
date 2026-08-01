@@ -23,13 +23,19 @@ import java.util.stream.Collectors;
 /**
  * Root of a mod's configuration tree.
  * <p>
- * <b>Port contract K4 (a §10 cut).</b> The NeoForge {@code ModConfigSpec} builder this class used to wrap has
- * no Fabric or vanilla counterpart, so every {@code defineXxx} now simply mints an in-memory
- * {@link ConfigValue} holding the old TOML default. All the {@code defineXxx} / {@code addWatcher} signatures
- * and the {@code XXX.get()} call sites are unchanged; what is lost is persistence, per-world server configs,
- * client/server synchronisation, range/element validation on load and the generated config screen.
+ * <b>Port contract K4 (a §10 cut), partially restored.</b> The NeoForge {@code ModConfigSpec} builder this class
+ * used to wrap has no Fabric or vanilla counterpart, so every {@code defineXxx} mints a {@link ConfigValue}
+ * holding the old TOML default directly. All the {@code defineXxx} / {@code addWatcher} signatures and the
+ * {@code XXX.get()} call sites are unchanged.
+ * <p>
+ * Every minted value is registered with the {@link ConfigStore} that {@link Configurations} put in the
+ * {@link Builder}, so the tree is loaded from and saved to {@code config/<modid>-<type>.toml}, and a SERVER
+ * configuration is shipped to joining clients again ({@link ConfigSyncManager}). What is still lost is per-world
+ * server configs, range/element validation at <em>definition</em> time and the generated config screen.
  *
  * @see ConfigValue
+ * @see ConfigStore
+ * @see ConfigSyncManager
  */
 public abstract class AbstractConfiguration
 {
@@ -37,7 +43,14 @@ public abstract class AbstractConfiguration
     public static final String COMMENT_SUFFIX = ".comment";
 
     final List<ConfigWatcher<?>> watchers = new ArrayList<>();
-    private final Builder builder;
+
+    /**
+     * Where {@link #build} registers what it mints. Null when this configuration was constructed with the public
+     * no-arg {@link Builder}, i.e. outside {@link Configurations}; then nothing is persisted, as before.
+     */
+    @Nullable
+    private final ConfigStore store;
+
     private final String modId;
 
     private final Deque<String> categories = new ArrayDeque<>();
@@ -46,8 +59,15 @@ public abstract class AbstractConfiguration
 
     protected AbstractConfiguration(final Builder builder, final String modId)
     {
-        this.builder = builder;
+        this.store = builder.store();
         this.modId = modId;
+
+        // the store is created before the mod id is known - Configurations builds it, but only this subclass
+        // knows which mod it is - so this is where the file name gets resolved
+        if (store != null)
+        {
+            store.bindModId(modId);
+        }
     }
 
     protected void createCategory(final String key)
@@ -86,13 +106,15 @@ public abstract class AbstractConfiguration
     }
 
     /**
-     * Everything must call this in the end - it consumes the pending restart flag and mints the value.
+     * Everything must call this in the end - it consumes the pending restart flag, mints the value and hands it
+     * to the store that will persist it.
      */
     private <T, C extends ConfigValue<T>> C build(final String key,
         @Nullable final String defaultDesc,
         final ValueFactory<T, C> factory)
     {
-        // there is no config file any more, so the restart type is only consumed, never acted upon
+        // the config file is not watched, so a reload can never require a restart: the flag is still only
+        // consumed, never acted upon
         nextRestartType = RestartType.NONE;
 
         String comment = translate(commentTKey(key));
@@ -101,7 +123,12 @@ public abstract class AbstractConfiguration
             comment += " " + defaultDesc;
         }
 
-        return factory.create(path(key), nameTKey(key), comment);
+        final C value = factory.create(path(key), nameTKey(key), comment);
+        if (store != null)
+        {
+            store.register(value);
+        }
+        return value;
     }
 
     private static String translate(final String key, final Object... args)
@@ -140,6 +167,7 @@ public abstract class AbstractConfiguration
 
     protected IntValue defineInteger(final String key, final int defaultValue, final int min, final int max)
     {
+        checkRange(key, defaultValue, min, max);
         return build(key,
             translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
             (p, t, c) -> new IntValue(p, t, c, defaultValue, min, max));
@@ -159,6 +187,7 @@ public abstract class AbstractConfiguration
 
     protected LongValue defineLong(final String key, final long defaultValue, final long min, final long max)
     {
+        checkRange(key, defaultValue, min, max);
         return build(key,
             translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
             (p, t, c) -> new LongValue(p, t, c, defaultValue, min, max));
@@ -166,14 +195,47 @@ public abstract class AbstractConfiguration
 
     protected DoubleValue defineDouble(final String key, final double defaultValue)
     {
-        return defineDouble(key, defaultValue, Double.MIN_VALUE, Double.MAX_VALUE);
+        // NOT Double.MIN_VALUE: that is the smallest *positive* double (4.9E-324), so using it as a lower bound
+        // made DoubleValue#set clamp every zero/negative assignment up to 4.9E-324. -Double.MAX_VALUE is the most
+        // negative finite double and the symmetric counterpart of the Double.MAX_VALUE upper bound; infinities are
+        // deliberately not used, as min/max are also rendered into the user facing default description above.
+        return defineDouble(key, defaultValue, -Double.MAX_VALUE, Double.MAX_VALUE);
     }
 
     protected DoubleValue defineDouble(final String key, final double defaultValue, final double min, final double max)
     {
+        checkRange(key, defaultValue, min, max);
         return build(key,
             translate(DEFAULT_KEY_PREFIX + "number", defaultValue, min, max),
             (p, t, c) -> new DoubleValue(p, t, c, defaultValue, min, max));
+    }
+
+    /**
+     * Integral range guard, also used for {@code int} through widening.
+     * <p>
+     * The numeric {@link ConfigValue} subclasses clamp in {@code set}, so a default outside its own declared range
+     * would be silently rewritten. Failing here instead turns that into a hard error during mod init.
+     */
+    private static void checkRange(final String key, final long defaultValue, final long min, final long max)
+    {
+        if (min > max || defaultValue < min || defaultValue > max)
+        {
+            throw new IllegalArgumentException(
+                "Config '" + key + "': default " + defaultValue + " is outside of range [" + min + ", " + max + "]");
+        }
+    }
+
+    /**
+     * Floating point range guard. Written as negated positive assertions so that a NaN default or bound is rejected
+     * as well - {@code Math.clamp} would otherwise let it through.
+     */
+    private static void checkRange(final String key, final double defaultValue, final double min, final double max)
+    {
+        if (!(min <= max) || !(defaultValue >= min && defaultValue <= max))
+        {
+            throw new IllegalArgumentException(
+                "Config '" + key + "': default " + defaultValue + " is outside of range [" + min + ", " + max + "]");
+        }
     }
 
     /**
