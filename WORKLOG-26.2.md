@@ -1,9 +1,11 @@
 # Worklog 26.2 — где остановились
 
-Ветка: `claude/config-save-check-fko7by` · PR: [#3](https://github.com/unknown-wq/BlockUI/pull/3) · обновлено 2026-07-31
+Ветка: `claude/fix-mod-init-crashes` · обновлено 2026-08-01
+Предыдущая: `claude/config-save-check-fko7by` · PR: [#3](https://github.com/unknown-wq/BlockUI/pull/3)
 
-Живого запуска не было ни разу: в контейнере нет дисплея, `runClient` не поднимается.
-Всё ниже проверено компиляцией, юнит-тестами и чтением байткода — не рантаймом.
+Живого клиента не было ни разу: в контейнере нет дисплея, `runClient` не поднимается.
+Всё ниже проверено компиляцией, юнит-тестами и чтением байткода — не рантаймом; единственное
+исключение — §5, который проверен живыми `runDatagen` / `runServer` со стороны MineColonies.
 
 ---
 
@@ -18,6 +20,7 @@
 | `97ee934` | Восстановлен `ColouredVertexConsumer` |
 | `5b834dc` | Этот worklog |
 | `64f586b` · `0eaaf25` | Синк server-конфигов клиенту + мерж |
+| `d84e18a` | Два краша mod init в `LanguageHandler` / `ClientLocale` |
 
 ### 1. Конфиги не сохранялись
 
@@ -130,6 +133,43 @@ headless), `ConfigSyncManager` (реестр деревьев, хуки жизн
 
 ---
 
+### 5. Два краша mod init в `com.ldtteam.common.language`
+
+Первый живой запуск порта MineColonies падал дважды подряд у нас, до того как выполнялась
+хоть одна строка зависимого мода. **Structurize падал там же** — в отчёте о падении его
+`onInitialize` идёт подавленным исключением, он зовёт `loadLangPath` точно так же. Кто первым
+дошёл до класса, тот получил `ExceptionInInitializerError`, второму достался
+`NoClassDefFoundError`. То есть без этих двух фиксов не стартовал **ни один** наш потребитель.
+
+**`ClientLocale#getLocale` проверял на одно поле меньше, чем нужно.** Комментарий над строкой
+предупреждал только про `Minecraft.getInstance() == null` в датагене. В 26.2 fabric-loader
+зовёт точки входа из `Hooks.startClient`, вкрученного внутрь `Minecraft.<init>`: экземпляр уже
+присвоен (`Minecraft.java:384`), а `options` — ещё нет (`Minecraft.java:427`). Всё, что
+спрашивало локаль на mod init, падало в этом окне. Возвращаемый теперь `null` — то самое
+состояние, которое вызывающая сторона и так умела обрабатывать.
+
+**`LanguageCache#load` разыменовывал ресурс, которого может не быть.** Фолбэк с текущей локали
+на `en_us` не гарантирует ничего: `assets/minecolonies/lang/en_us.json` собирается их
+переводческим пайплайном, а не лежит в гите, так что в dev- и датаген-прогонах оба обращения
+возвращают `null`, и `new InputStreamReader(null, …)` уносит mod init. Строка без проверки
+есть и в `26.1.2` — **порт этот баг не вносил.** Пустой кэш здесь и есть правильный исход:
+`translateKey` при промахе уходит в `Language`. Теперь на отсутствующий файл приходится один
+warning на вызов `load`, и ни одного на обращение к ключу.
+
+Сам поиск файла переехал в `LanguageHandler#openLangFile` — фолбэк на `en_us` сохранён,
+при отсутствии обоих возвращается `null`. Побочная польза: метод не трогает ни `LanguageCache`,
+ни игру, поэтому тестируется без клиента и без лоадера (4 новых теста).
+
+Заодно закрыт `load()` после `setMClanguageLoaded()`: тот зануляет `languageMap`, и любой
+потребитель, перезагружающий свой путь после подъёма ванильного языка, получил бы NPE той же
+формы.
+
+Проверено со стороны MineColonies: с этим `runDatagen` и `runServer` проходят обе точки
+падения, сервер поднимается до `Done!` без единой строки `ERROR`. Клиент BlockUI и его GUI
+живьём по-прежнему не запускались.
+
+---
+
 ## Открытые проблемы
 
 ### Долг на нашей стороне
@@ -226,17 +266,18 @@ render-state систему, без `BufferBuilder`. Готовой формы �
 
 ## Состояние сборки
 
-`gradle build` на ветке — `BUILD SUCCESSFUL`, **55 тестов, 0 падений**: 21 `XmlOpsTest`,
+`gradle build` на ветке — `BUILD SUCCESSFUL`, **59 тестов, 0 падений**: 21 `XmlOpsTest`,
 1 `IColourTest`, 8 `ConfigStoreTest`, 8 `FlatTomlTest`, 15 `ConfigSyncTest`,
-2 `ConfigSyncMessageTest`.
+2 `ConfigSyncMessageTest`, 4 `LanguageFileLookupTest`.
 
 `gradle runServer` доходит до `Done!` без единой строки `ERROR` — это подтверждает, что
 регистрация payload'а и хук `ServerPlayConnectionEvents.JOIN` отрабатывают на выделенном
 сервере, не затягивая клиентские классы.
 
-Не проверено рантаймом: путь mod-init (`FabricLoader.getConfigDir()`, регистрация
-lifecycle-событий, текст комментариев через `LanguageHandler`), весь GUI-слой и живой
-клиент-серверный хоп синка — `runClient` не поднимается, дисплея нет.
+Не проверено рантаймом: `FabricLoader.getConfigDir()`, регистрация lifecycle-событий, текст
+комментариев через `LanguageHandler`, весь GUI-слой и живой клиент-серверный хоп синка —
+`runClient` не поднимается, дисплея нет. Сам путь mod-init теперь пройден живьём, но чужим
+запуском: `runDatagen` и `runServer` MineColonies с `d84e18a` доходят до `Done!` без `ERROR`.
 
 ### Что человеку проверить первым делом на живом запуске
 
