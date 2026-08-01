@@ -263,6 +263,18 @@ javac -nowarn -proc:none -Xmaxerrs 3000 --release 25 -cp "$CP" -d /tmp/out-<ро
   что угодно в слот брони — отсюда `PlayerMainInvWrapper` и диапазонный конструктор `InvWrapper`.
   **В дереве нет ни одного вызывающего — пакет существует для потребителей, не удалять как мёртвый код.**
 
+- **Устойчивость к отсутствующей текстуре (не срез §10, а баг апстрима).** `Image.resolveBlit` звал
+  `AtlasManager#getAtlasOrThrow` с `null`-id для namespace, не зарегистрировавшего gui-атлас, и валил
+  весь `BOScreen` через `ReportedException`. Резолв атласа вынесен в
+  `util/texture/GuiAtlasLookup` — единственная точка входа в атлас для всей `Image`-семьи, не бросает
+  никогда: нет атласа у namespace → текстура рисуется как отдельный файл. Убран жёсткий
+  `Objects.requireNonNull` в `ResolvedWidgetSprites#fromUnresolved`, стоявший сразу после
+  `SafeError`-проверки в `ButtonImage#drawSelf`. Контракт: **после `SafeError` ни один путь не бросает
+  в проде.** Тот же дефект дословно есть в `26.1.2` — порт его не вносил.
+  Сопутствующее: `Image#setImage` проверял старое поле вместо аргумента (сотня ложных ошибок в лог на
+  открытие окна), `Pane#getXmlRelatedId()` для панелей из кода возвращал `"UNKNOWN"`, `SafeError` в
+  проде логирует каждое различное сообщение один раз со сбросом на релоаде ресурсов.
+
 ---
 
 ## Disabled content

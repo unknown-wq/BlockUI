@@ -21,6 +21,11 @@ import java.util.Objects;
  */
 public class Pane extends UiRenderMacros
 {
+    /**
+     * {@link #paneParamsPath} value meaning "this pane was not built from xml".
+     */
+    private static final String UNKNOWN_XML_PATH = "UNKNOWN";
+
     protected static Pane lastClickedPane;
     protected static Pane focus;
     protected Pane onHover;
@@ -39,7 +44,7 @@ public class Pane extends UiRenderMacros
     protected CursorType cursor = Cursor.DEFAULT;
     // Runtime
     protected BOWindow window;
-    private   String paneParamsPath = "UNKNOWN";
+    private   String paneParamsPath = UNKNOWN_XML_PATH;
     protected View parent;
     protected Pane hoverSource = null;
     /**
@@ -145,11 +150,46 @@ public class Pane extends UiRenderMacros
     }
 
     /**
+     * Names this pane for error messages, and is expected to actually name it: an error that only says "UNKNOWN" costs
+     * more time than it saves. Three sources, in order of usefulness:
+     * <ol>
+     * <li>the window this pane (or its nearest attached ancestor) belongs to, plus the id/parent path inside it,</li>
+     * <li>the xml path captured by the {@link PaneParams} constructor, for a pane parsed but not attached yet,</li>
+     * <li>for a pane built in code, which has neither, its type plus whatever parent chain exists.</li>
+     * </ol>
+     * The plain {@link #UNKNOWN_XML_PATH} default is never returned - it used to be, for every code-built pane, which
+     * is exactly the population that needs identifying the most because there is no xml file to grep for.
+     *
      * @return string path from nearest parent with id
      */
     public final String getXmlRelatedId()
     {
-        return window == null ? paneParamsPath : window.getXmlResourceLocation().toString() + "|" + Objects.requireNonNullElseGet(id, () -> pathToNearestIdParent(parent));
+        final String path = id == null || id.isEmpty() ? pathToNearestIdParent(parent) : id;
+        final BOWindow ownerWindow = findWindow(this);
+
+        if (ownerWindow != null)
+        {
+            return ownerWindow.getXmlResourceLocation().toString() + "|" + path;
+        }
+        if (!UNKNOWN_XML_PATH.equals(paneParamsPath))
+        {
+            return paneParamsPath;
+        }
+        return getClass().getSimpleName() + "|" + path;
+    }
+
+    /**
+     * @param pane pane to start at
+     * @return nearest window up the parent chain, or null when this pane is not attached to one (yet)
+     */
+    @Nullable
+    private static BOWindow findWindow(final Pane pane)
+    {
+        if (pane == null)
+        {
+            return null;
+        }
+        return pane.window != null ? pane.window : findWindow(pane.parent);
     }
 
     private static String pathToNearestIdParent(final Pane pane)
@@ -159,12 +199,20 @@ public class Pane extends UiRenderMacros
             return "root";
         }
 
-        return pane.id != null ? pane.id : pathToNearestIdParent(pane.parent) + "/" + pane.getClass().getSimpleName();
+        // ids default to "" rather than null, so an id-less pane has to be recognized by emptiness - checking for null
+        // here made the whole parent walk dead code and produced empty path segments
+        return pane.id != null && !pane.id.isEmpty() ? pane.id : pathToNearestIdParent(pane.parent) + "/" + pane.getClass().getSimpleName();
     }
 
     public void requireNonNull(final Object value, final String errorMessage)
     {
-        SafeError.requireNonNull(value, errorMessage + " (" + getXmlRelatedId() + ")");
+        // build the decorated message only when it is actually going to be used. Several callers of this sit in
+        // drawSelf, i.e. run for every pane on every frame, and used to concatenate a throwaway string each time -
+        // now that getXmlRelatedId also walks the parent chain, doing it eagerly would be paid per frame forever.
+        if (value == null)
+        {
+            SafeError.requireNonNull(null, errorMessage + " (" + getXmlRelatedId() + ")");
+        }
     }
 
     /**

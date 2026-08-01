@@ -4,6 +4,7 @@ import com.ldtteam.blockui.controls.*;
 import com.ldtteam.blockui.mod.BlockUI;
 import com.ldtteam.blockui.mod.Log;
 import com.ldtteam.blockui.util.SafeError;
+import com.ldtteam.blockui.util.texture.GuiAtlasLookup;
 import com.ldtteam.blockui.views.*;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -222,5 +223,10 @@ public final class Loader extends SimplePreparableReloadListener<Map<Identifier,
     protected void apply(final Map<Identifier, PaneParams> foundXmls, final ResourceManager rm, final ProfilerFiller profiler)
     {
         xmlCache = foundXmls;
+
+        // A resource reload changes which textures/xmls exist, so anything reported before this point may now be fixed
+        // (or newly broken). Let SafeError report once more instead of staying silent for the rest of the session.
+        SafeError.resetReportedErrors();
+        GuiAtlasLookup.forgetReportedNamespaces();
     }
 }
